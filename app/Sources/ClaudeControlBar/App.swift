@@ -2,10 +2,13 @@ import SwiftUI
 
 @main
 struct ClaudeControlBarApp: App {
+  @State private var model = AppModel()
+
   var body: some Scene {
-    MenuBarExtra("Claude Control Bar", systemImage: "pawprint.fill") {
-      Text("Booting…")
-      Button("Quit") { NSApplication.shared.terminate(nil) }
+    MenuBarExtra {
+      PopoverView(store: model.store)
+    } label: {
+      MenuBarLabel(store: model.store)
     }
     .menuBarExtraStyle(.window)
   }

@@ -3,7 +3,9 @@ import Observation
 
 // Single source of truth for the UI. Decodes /state or SSE blobs into a Snapshot
 // and reports which sessions newly entered `needs` (so the Notifier fires once).
-@MainActor
+// Not @MainActor: it's read on the main thread by SwiftUI and mutated only from a
+// @MainActor stream task, so it's effectively main-isolated without the ceremony
+// that fights the App's nonisolated @State initializer.
 @Observable
 public final class SessionStore {
   public var snapshot: Snapshot = .empty
