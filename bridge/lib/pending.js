@@ -13,7 +13,7 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
 
 // Park a held request. `respond(decision)` is called exactly once, either by a
 // user decision or by the timeout. Returns the pending id.
-export function hold({ sessionId, cwd, tool, input, respond, timeoutMs }) {
+export function hold({ sessionId, cwd, tool, input, channel, respond, timeoutMs }) {
   const id = randomUUID();
   const ms = Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS;
 
@@ -28,11 +28,26 @@ export function hold({ sessionId, cwd, tool, input, respond, timeoutMs }) {
     cwd,
     tool,
     input,
+    channel: channel || "preToolUse",
     respond,
     timer,
     createdAt: Date.now(),
   });
   return id;
+}
+
+// Find an existing pending for the same tool call (session + tool + input),
+// used to dedupe when both PreToolUse and PermissionRequest fire for one call.
+export function findByCall(sessionId, tool, input) {
+  const key = JSON.stringify(input || null);
+  return (
+    [...pending.values()].find(
+      (p) =>
+        p.sessionId === sessionId &&
+        p.tool === tool &&
+        JSON.stringify(p.input || null) === key
+    ) || null
+  );
 }
 
 // Resolve a held request with a decision: "allow" | "deny" | "ask".
