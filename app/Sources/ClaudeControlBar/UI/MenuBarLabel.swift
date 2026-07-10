@@ -2,14 +2,13 @@ import SwiftUI
 import CCBarCore
 
 // The menu-bar glyph: a monochrome footprint (auto-tinted by macOS) with a small
-// colored state dot, so color is never the only signal. Reading store.snapshot in
-// the body establishes Observation, so the glyph updates live.
+// colored state dot, so color is never the only signal.
 struct MenuBarLabel: View {
-  let store: SessionStore
+  @ObservedObject var model: AppModel
   var body: some View {
-    let agg = store.snapshot.aggregate
+    let agg = model.snapshot.aggregate
     Image(systemName: "pawprint.fill")
-      .foregroundStyle(store.connected ? Color.primary : Color.secondary)
+      .foregroundStyle(model.connected ? Color.primary : Color.secondary)
       .overlay(alignment: .topTrailing) {
         Circle()
           .fill(Theme.color(agg))

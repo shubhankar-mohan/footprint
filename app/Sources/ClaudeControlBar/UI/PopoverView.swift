@@ -2,7 +2,7 @@ import SwiftUI
 import CCBarCore
 
 struct PopoverView: View {
-  let store: SessionStore
+  @ObservedObject var model: AppModel
   let onDecide: (String, String) -> Void
 
   var body: some View {
@@ -10,24 +10,24 @@ struct PopoverView: View {
       HStack {
         Text("Claude Control Bar").font(.system(size: 12, weight: .semibold))
         Spacer()
-        Circle().fill(store.connected ? Color.green : Color.secondary).frame(width: 6, height: 6)
+        Circle().fill(model.connected ? Color.green : Color.secondary).frame(width: 6, height: 6)
       }
       .padding(.horizontal, 12).padding(.vertical, 8)
       Divider()
 
-      if !store.snapshot.pending.isEmpty {
-        ForEach(store.snapshot.pending) { p in
+      if !model.snapshot.pending.isEmpty {
+        ForEach(model.snapshot.pending) { p in
           PermissionPromptView(pending: p, onDecide: onDecide)
         }
         Divider()
       }
 
-      if store.snapshot.sessions.isEmpty {
+      if model.snapshot.sessions.isEmpty {
         Text("The map is quiet.")
           .font(.system(size: 13)).foregroundStyle(.secondary)
           .frame(maxWidth: .infinity).padding(.vertical, 28)
       } else {
-        ForEach(sorted(store.snapshot.sessions)) { s in SessionRowView(session: s) }
+        ForEach(sorted(model.snapshot.sessions)) { s in SessionRowView(session: s) }
       }
 
       Divider()
