@@ -65,7 +65,9 @@ async function main() {
 
   const event = payload.hook_event_name || "";
   const tool = payload.tool_name || "";
-  const isGate = event === "PreToolUse" && GATE_TOOLS.includes(tool);
+  const isGate =
+    event === "PermissionRequest" ||
+    (event === "PreToolUse" && GATE_TOOLS.includes(tool));
 
   const url = `http://127.0.0.1:${port}/hook`;
   const body = JSON.stringify({ ...payload, gate: isGate, timeout_ms: TIMEOUT_MS });
@@ -83,9 +85,12 @@ async function main() {
 
     if (isGate) {
       // The bridge holds this response until the user decides. Print whatever
-      // decision JSON it returns straight to stdout for Claude Code.
+      // decision JSON it returns straight to stdout for Claude Code. An empty
+      // object `{}` means passthrough → print nothing so Claude prompts normally.
       const decision = await resp.json();
-      process.stdout.write(JSON.stringify(decision));
+      if (decision && Object.keys(decision).length > 0) {
+        process.stdout.write(JSON.stringify(decision));
+      }
     }
     clearTimeout(t);
     process.exit(0);
