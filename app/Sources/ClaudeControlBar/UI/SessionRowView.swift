@@ -3,6 +3,7 @@ import CCBarCore
 
 struct SessionRowView: View {
   let session: Session
+  var onReveal: () -> Void = {}
   @State private var hovering = false
   var body: some View {
     HStack(spacing: 8) {
@@ -22,7 +23,9 @@ struct SessionRowView: View {
           .font(.system(size: 11)).foregroundStyle(Theme.color(session.state))
       }
       Spacer()
-      if let t = session.updatedAt {
+      if hovering {
+        Image(systemName: "arrow.up.forward.app").font(.system(size: 11)).foregroundStyle(.secondary)
+      } else if let t = session.updatedAt {
         Text(relative(t)).font(.system(size: 11)).foregroundStyle(.tertiary)
       }
     }
@@ -30,6 +33,8 @@ struct SessionRowView: View {
     .background(hovering ? Theme.rowHover : Color.clear)
     .contentShape(Rectangle())
     .onHover { hovering = $0 }
+    .onTapGesture { onReveal() }
+    .help("Click to open this session's terminal")
   }
 
   private func tierLabel(_ t: Tier) -> String {

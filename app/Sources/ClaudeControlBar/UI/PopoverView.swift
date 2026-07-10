@@ -5,10 +5,13 @@ struct PopoverView: View {
   @ObservedObject var model: AppModel
   let onDecide: (String, String) -> Void
   @State private var showSettings = false
+  @State private var showStart = false
 
   var body: some View {
     if showSettings {
       SettingsView(model: model, show: $showSettings)
+    } else if showStart {
+      StartSessionView(model: model, show: $showStart)
     } else {
       main
     }
@@ -20,8 +23,10 @@ struct PopoverView: View {
         Text("Claude Control Bar").font(.system(size: 12, weight: .semibold))
         Spacer()
         Circle().fill(model.connected ? Color.green : Color.secondary).frame(width: 6, height: 6)
+        Button { showStart = true } label: { Image(systemName: "plus") }
+          .buttonStyle(.plain).foregroundStyle(.secondary).help("Start a session")
         Button { showSettings = true } label: { Image(systemName: "gearshape") }
-          .buttonStyle(.plain).foregroundStyle(.secondary)
+          .buttonStyle(.plain).foregroundStyle(.secondary).help("Monitoring settings")
       }
       .padding(.horizontal, 12).padding(.vertical, 8)
       Divider()
@@ -36,13 +41,21 @@ struct PopoverView: View {
       if model.snapshot.sessions.isEmpty {
         emptyState
       } else {
-        ForEach(sorted(model.snapshot.sessions)) { s in SessionRowView(session: s) }
+        ForEach(sorted(model.snapshot.sessions)) { s in
+          SessionRowView(session: s, onReveal: { model.revealSession(s) })
+          if s.tier == .owned, let name = s.tmux {
+            OwnedInputBar(name: name, onSend: { model.sendInput($0, $1) })
+          }
+        }
       }
 
       Divider()
       HStack {
         Text("Mischief managed").font(.system(size: 10)).foregroundStyle(.tertiary)
         Spacer()
+        Button("New session") { showStart = true }
+          .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.color(.working))
+        Text("·").foregroundStyle(.tertiary)
         Button("Quit") { NSApplication.shared.terminate(nil) }
           .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
       }
@@ -59,6 +72,9 @@ struct PopoverView: View {
         Text("Monitoring is off, so sessions won't appear.")
           .font(.system(size: 11)).foregroundStyle(.tertiary)
         Button("Enable monitoring") { showSettings = true }
+          .font(.system(size: 12, weight: .semibold)).buttonStyle(.borderedProminent)
+      } else {
+        Button("Start a session") { showStart = true }
           .font(.system(size: 12, weight: .semibold)).buttonStyle(.borderedProminent)
       }
     }

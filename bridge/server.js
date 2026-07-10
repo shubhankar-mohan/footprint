@@ -25,6 +25,7 @@ import * as pending from "./lib/pending.js";
 import * as sessionMap from "./lib/session-map.js";
 import { decisionOutput } from "./lib/hookdecision.js";
 import * as tmux from "./scripts/tmux.mjs";
+import * as revealer from "./scripts/reveal.mjs";
 
 const HOST = "127.0.0.1";
 const PORT = Number.parseInt(process.env.CCBAR_PORT || "0", 10); // 0 = random free port
@@ -223,6 +224,17 @@ const server = http.createServer(async (req, res) => {
     try {
       await tmux.sendKeys(name, text);
       return sendJSON(res, 200, { ok: true });
+    } catch (e) {
+      return sendJSON(res, 500, { error: String(e.message || e) });
+    }
+  }
+
+  // --- reveal: jump to a session's terminal ------------------------------
+  if (req.method === "POST" && pathname === "/reveal") {
+    const { session, tier, app, pid } = await readBody(req);
+    try {
+      const r = await revealer.reveal({ tier, session, app, pid });
+      return sendJSON(res, 200, r);
     } catch (e) {
       return sendJSON(res, 500, { error: String(e.message || e) });
     }

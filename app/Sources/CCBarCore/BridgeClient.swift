@@ -50,4 +50,38 @@ public struct BridgeClient {
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)
     _ = try? await URLSession.shared.data(for: req)
   }
+
+  // Phase 3: own a session (tmux), send input, reveal its terminal.
+  public func launch(cwd: String, flags: [String: Any]) async -> String? {
+    guard let base = BridgePaths.baseURL() else { return nil }
+    var req = URLRequest(url: base.appendingPathComponent("tmux/launch"))
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try? JSONSerialization.data(withJSONObject: ["cwd": cwd, "flags": flags])
+    guard let (data, _) = try? await URLSession.shared.data(for: req),
+      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+    return obj["name"] as? String
+  }
+
+  public func sendInput(name: String, text: String) async {
+    await post("tmux/send", ["name": name, "text": text])
+  }
+
+  public func reveal(session: String?, tier: String?, app: String?, pid: Int?) async {
+    var body: [String: Any] = [:]
+    if let session { body["session"] = session }
+    if let tier { body["tier"] = tier }
+    if let app { body["app"] = app }
+    if let pid { body["pid"] = pid }
+    await post("reveal", body)
+  }
+
+  private func post(_ path: String, _ body: [String: Any]) async {
+    guard let base = BridgePaths.baseURL() else { return }
+    var req = URLRequest(url: base.appendingPathComponent(path))
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    _ = try? await URLSession.shared.data(for: req)
+  }
 }

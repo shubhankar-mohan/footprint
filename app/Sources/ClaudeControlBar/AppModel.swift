@@ -39,6 +39,28 @@ final class AppModel: ObservableObject {
     Task { [client] in await client.decide(id: id, decision: decision) }
   }
 
+  // Phase 3: start an owned session (tmux) + open its terminal; reveal; quick input.
+  func startSession(cwd: String, terminal: String, mode: String) {
+    Task { [client] in
+      var flags: [String: Any] = [:]
+      if mode == "bypass" { flags["skip"] = true }
+      else if mode != "ask" { flags["mode"] = mode }
+      if let name = await client.launch(cwd: cwd, flags: flags) {
+        await client.reveal(session: name, tier: "owned", app: terminal, pid: nil)
+      }
+    }
+  }
+
+  func revealSession(_ s: Session) {
+    Task { [client] in
+      await client.reveal(session: s.tmux, tier: s.tier?.rawValue, app: "Terminal", pid: nil)
+    }
+  }
+
+  func sendInput(_ name: String, _ text: String) {
+    Task { [client] in await client.sendInput(name: name, text: text) }
+  }
+
   // Hook install/uninstall run off the main thread (they spawn node + touch disk).
   func installHooks() { runHook { HookInstaller.install() } }
   func uninstallHooks() { runHook { HookInstaller.uninstall() } }
