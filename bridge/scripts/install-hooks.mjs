@@ -48,6 +48,8 @@ const OUR_HOOKS = {
   PreToolUse: [
     { matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit", hooks: [hookObj(GATE_TIMEOUT_S)] },
   ],
+  // The official permission channel — long timeout so we can hold it open.
+  PermissionRequest: [{ hooks: [hookObj(GATE_TIMEOUT_S)] }],
 };
 
 function isOurs(entry) {
