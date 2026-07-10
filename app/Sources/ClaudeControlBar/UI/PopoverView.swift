@@ -49,6 +49,7 @@ struct PopoverView: View {
       .padding(.horizontal, 12).padding(.vertical, 6)
     }
     .frame(width: 320)
+    .background(Theme.popoverBG)
   }
 
   @ViewBuilder private var emptyState: some View {

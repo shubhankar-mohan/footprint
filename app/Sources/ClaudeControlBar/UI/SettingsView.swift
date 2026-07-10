@@ -46,5 +46,6 @@ struct SettingsView: View {
       .font(.system(size: 12, weight: .semibold))
     }
     .padding(12).frame(width: 320)
+    .background(Theme.popoverBG)
   }
 }

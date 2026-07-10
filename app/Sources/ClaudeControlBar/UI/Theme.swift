@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CCBarCore
 
 // Colors + glyphs per docs/design-brief.md §8. Footprint encodes session state only.
@@ -25,5 +26,17 @@ enum Theme {
     case .paused: return "Paused"
     case .ended: return "Ended"
     }
+  }
+
+  // Warm surfaces that shift per appearance (aged parchment / moonlit charcoal).
+  static let popoverBG = dyn(light: (0.980, 0.980, 0.976), dark: (0.118, 0.118, 0.110)) // #FAFAF9 / #1E1E1C
+  static let rowHover = dyn(light: (0.941, 0.937, 0.929), dark: (0.165, 0.165, 0.153))  // #F0EFED / #2A2A27
+
+  private static func dyn(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+    Color(nsColor: NSColor(name: nil) { appearance in
+      let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      let c = isDark ? dark : light
+      return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
+    })
   }
 }

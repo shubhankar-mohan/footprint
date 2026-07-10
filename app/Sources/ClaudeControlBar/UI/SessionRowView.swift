@@ -3,6 +3,7 @@ import CCBarCore
 
 struct SessionRowView: View {
   let session: Session
+  @State private var hovering = false
   var body: some View {
     HStack(spacing: 8) {
       Rectangle().fill(Theme.color(session.state)).frame(width: 3, height: 28)
@@ -26,7 +27,9 @@ struct SessionRowView: View {
       }
     }
     .padding(.horizontal, 12).frame(height: 44)
+    .background(hovering ? Theme.rowHover : Color.clear)
     .contentShape(Rectangle())
+    .onHover { hovering = $0 }
   }
 
   private func tierLabel(_ t: Tier) -> String {
