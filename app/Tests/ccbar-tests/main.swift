@@ -33,5 +33,16 @@ let minimal = try! JSONDecoder().decode(
   Snapshot.self, from: Data(#"{"sessions":[],"pending":[],"aggregate":"idle"}"#.utf8))
 check(minimal.sessions.isEmpty, "tolerates missing sessionMap/ts")
 
+// 4. SessionStore reports newly-needs sessions once
+MainActor.assumeIsolated {
+  let store = SessionStore()
+  _ = store.apply(Data(#"{"sessions":[{"id":"a","state":"working"}],"pending":[],"aggregate":"working"}"#.utf8))
+  let newly = store.apply(Data(#"{"sessions":[{"id":"a","state":"needs"}],"pending":[],"aggregate":"needs"}"#.utf8))
+  check(newly == ["a"], "apply reports a newly-needs session")
+  let again = store.apply(Data(#"{"sessions":[{"id":"a","state":"needs"}],"pending":[],"aggregate":"needs"}"#.utf8))
+  check(again.isEmpty, "does not re-report a session already in needs")
+  check(store.snapshot.aggregate == .needs, "store holds latest snapshot")
+}
+
 print(failures == 0 ? "\nALL CHECKS PASSED ✓" : "\n\(failures) FAILURES ✗")
 exit(failures == 0 ? 0 : 1)

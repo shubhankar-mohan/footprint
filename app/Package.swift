@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "ClaudeControlBar",
-  platforms: [.macOS(.v13)],
+  platforms: [.macOS(.v14)], // v14 for the Observation framework (@Observable)
   targets: [
     // Shared logic + views, so both the app and the test runner can use them.
     .target(name: "CCBarCore", path: "Sources/CCBarCore"),
