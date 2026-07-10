@@ -163,6 +163,28 @@ async function main() {
     await api("/decision", "POST", { id: dupe.id, decision: "deny" });
     await Promise.race([a, b]);
 
+    // 9. bypassPermissions sessions are never gated (no hold, immediate ok)
+    const bypassResp = await fetch(base + "/hook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: "sess-bypass",
+        cwd: "/tmp/scratch",
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: { command: "echo hi" },
+        permission_mode: "bypassPermissions",
+        gate: true,
+        timeout_ms: 3000,
+      }),
+    }).then((r) => r.json());
+    ok(bypassResp.ok === true, "bypassPermissions PreToolUse is not held (returns ok immediately)");
+    state = await api("/state");
+    ok(
+      !state.pending.find((p) => p.sessionId === "sess-bypass"),
+      "bypassPermissions PreToolUse creates no pending"
+    );
+
     console.log(`\nALL ${pass} CHECKS PASSED ✓`);
   } finally {
     server.kill("SIGINT");

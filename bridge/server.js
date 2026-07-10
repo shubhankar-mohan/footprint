@@ -94,6 +94,9 @@ function readBody(req) {
 // gates only when the hook shim flags it (`gate: true`) for a watched tool, so
 // ordinary PreToolUse events still flow straight through.
 function isPermissionGate(payload) {
+  // bypassPermissions = the user explicitly opted out of prompts; gating there is
+  // pointless and would stall the session (and any controlling agent session).
+  if (payload.permission_mode === "bypassPermissions") return false;
   if (payload.hook_event_name === "PermissionRequest") return true;
   return payload.hook_event_name === "PreToolUse" && payload.gate === true;
 }

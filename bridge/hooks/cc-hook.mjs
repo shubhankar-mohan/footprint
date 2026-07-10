@@ -65,9 +65,13 @@ async function main() {
 
   const event = payload.hook_event_name || "";
   const tool = payload.tool_name || "";
+  // Never hold a bypassPermissions session — the user opted out of prompts, and
+  // holding would stall the session (including a controlling agent session).
+  const bypass = payload.permission_mode === "bypassPermissions";
   const isGate =
-    event === "PermissionRequest" ||
-    (event === "PreToolUse" && GATE_TOOLS.includes(tool));
+    !bypass &&
+    (event === "PermissionRequest" ||
+      (event === "PreToolUse" && GATE_TOOLS.includes(tool)));
 
   const url = `http://127.0.0.1:${port}/hook`;
   const body = JSON.stringify({ ...payload, gate: isGate, timeout_ms: TIMEOUT_MS });
