@@ -12,10 +12,15 @@ final class AppModel {
   init() {
     store = SessionStore()
     supervisor.start()
+    Notifier.requestAuth()
     streamTask = Task { @MainActor [store, client] in
       for await raw in client.stream() {
         store.connected = true
-        store.apply(raw)
+        let newly = store.apply(raw)
+        for id in newly {
+          let proj = store.snapshot.sessions.first { $0.id == id }?.project ?? "A session"
+          Notifier.needsYou(project: proj)
+        }
       }
     }
   }

@@ -6,7 +6,7 @@ struct ClaudeControlBarApp: App {
 
   var body: some Scene {
     MenuBarExtra {
-      PopoverView(store: model.store)
+      PopoverView(store: model.store, onDecide: { model.decide($0, $1) })
     } label: {
       MenuBarLabel(store: model.store)
     }

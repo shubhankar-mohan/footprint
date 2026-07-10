@@ -3,6 +3,7 @@ import CCBarCore
 
 struct PopoverView: View {
   let store: SessionStore
+  let onDecide: (String, String) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -13,6 +14,13 @@ struct PopoverView: View {
       }
       .padding(.horizontal, 12).padding(.vertical, 8)
       Divider()
+
+      if !store.snapshot.pending.isEmpty {
+        ForEach(store.snapshot.pending) { p in
+          PermissionPromptView(pending: p, onDecide: onDecide)
+        }
+        Divider()
+      }
 
       if store.snapshot.sessions.isEmpty {
         Text("The map is quiet.")
