@@ -22,6 +22,7 @@ import {
 } from "./lib/paths.js";
 import * as sessions from "./lib/sessions.js";
 import * as pending from "./lib/pending.js";
+import * as sessionMap from "./lib/session-map.js";
 import { decisionOutput } from "./lib/hookdecision.js";
 import * as tmux from "./scripts/tmux.mjs";
 
@@ -49,6 +50,7 @@ function snapshot() {
     sessions: sessions.all(),
     pending: pending.list(),
     aggregate: sessions.aggregateState(),
+    sessionMap: sessionMap.all(),
     ts: Date.now(),
   };
 }
@@ -128,6 +130,12 @@ const server = http.createServer(async (req, res) => {
     const payload = await readBody(req);
     appendEventLog({ dir: "in", payload });
     sessions.upsertFromHook(payload);
+    if (payload.session_id && payload.cwd) {
+      sessionMap.set(payload.session_id, {
+        cwd: payload.cwd,
+        project: payload.cwd.split("/").filter(Boolean).pop() || null,
+      });
+    }
 
     // A permission gate: hold the response open until a decision arrives.
     if (isPermissionGate(payload)) {
@@ -194,6 +202,11 @@ const server = http.createServer(async (req, res) => {
     try {
       const info = await tmux.launch({ cwd, name, flags });
       sessions.registerOwned(info.name, { cwd, tmux: info.name });
+      sessionMap.set(info.name, {
+        cwd,
+        tmux: info.name,
+        project: (cwd || "").split("/").filter(Boolean).pop() || null,
+      });
       broadcast();
       return sendJSON(res, 200, info);
     } catch (e) {
