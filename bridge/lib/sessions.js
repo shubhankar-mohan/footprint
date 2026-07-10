@@ -47,6 +47,10 @@ export function upsertFromHook(payload) {
       existing.state = "idle";
       existing.tool = null;
       break;
+    case "PermissionRequest":
+      existing.state = "needs";
+      existing.tool = payload.tool_name || existing.tool;
+      break;
     case "Notification":
       existing.state = "needs";
       break;
