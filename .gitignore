@@ -34,6 +34,10 @@ DerivedData/
 Packages/
 *.playground/playground.xcworkspace
 
+# ─── Release artifacts ───────────────────────────────────
+dist/*.zip
+dist/*.dmg
+
 # ─── App runtime / local state (lives in ~/.claude-control-bar) ──
 # Never commit captured payloads or the port file if they land in-tree.
 events.log
