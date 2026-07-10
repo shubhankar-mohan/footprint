@@ -1,0 +1,20 @@
+{
+  "name": "claude-control-bar-bridge",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Phase 0 spike: local bridge that ingests Claude Code hook events, holds permission requests open, and owns tmux sessions.",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "bin": {
+    "ccbar-bridge": "./server.js",
+    "ccbar": "./cli.mjs"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "cli": "node cli.mjs",
+    "test": "node test/smoke.mjs",
+    "install-hooks": "node scripts/install-hooks.mjs",
+    "uninstall-hooks": "node scripts/uninstall-hooks.mjs"
+  }
+}

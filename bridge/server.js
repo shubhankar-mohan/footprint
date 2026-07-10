@@ -1,0 +1,227 @@
+#!/usr/bin/env node
+// Claude Control Bar — Phase 0 local bridge.
+//
+// A tiny, dependency-free HTTP server bound to 127.0.0.1. It:
+//   • ingests Claude Code hook events into an in-memory session model
+//   • HOLDS permission requests open until a decision arrives (or times out)
+//   • serves state over GET /state and an SSE stream at GET /events
+//   • owns tmux sessions (create / send-keys / attach / continue)
+//
+// Nothing here is production-hard — it exists to prove the loop and capture
+// real hook payload shapes for Phase 1.
+
+import http from "node:http";
+import fs from "node:fs";
+import { URL } from "node:url";
+
+import {
+  ensureDir,
+  writePort,
+  readPort,
+  EVENT_LOG,
+} from "./lib/paths.js";
+import * as sessions from "./lib/sessions.js";
+import * as pending from "./lib/pending.js";
+import * as tmux from "./scripts/tmux.mjs";
+
+const HOST = "127.0.0.1";
+const PORT = Number.parseInt(process.env.CCBAR_PORT || "0", 10); // 0 = random free port
+
+const sseClients = new Set();
+
+function log(...args) {
+  const line = `[${new Date().toISOString()}] ${args.join(" ")}`;
+  console.log(line);
+}
+
+function appendEventLog(obj) {
+  try {
+    ensureDir();
+    fs.appendFileSync(EVENT_LOG, JSON.stringify(obj) + "\n");
+  } catch {
+    /* best effort */
+  }
+}
+
+function snapshot() {
+  return {
+    sessions: sessions.all(),
+    pending: pending.list(),
+    aggregate: sessions.aggregateState(),
+    ts: Date.now(),
+  };
+}
+
+function broadcast() {
+  const data = `data: ${JSON.stringify(snapshot())}\n\n`;
+  for (const res of sseClients) {
+    try {
+      res.write(data);
+    } catch {
+      sseClients.delete(res);
+    }
+  }
+}
+
+function sendJSON(res, code, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch {
+        resolve({ _raw: raw });
+      }
+    });
+  });
+}
+
+// Is this hook event a permission gate we should hold open?
+// Claude Code fires PreToolUse for permission-gated tools; the hook may return
+// a permissionDecision. We only hold PreToolUse events flagged as needing a gate
+// (the hook script sets `gate: true`), so ordinary PreToolUse still flows.
+function isPermissionGate(payload) {
+  return payload.hook_event_name === "PreToolUse" && payload.gate === true;
+}
+
+// Emit the Claude Code PreToolUse decision shape the hook will print to stdout.
+function decisionOutput(decision, reason) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: decision, // "allow" | "deny" | "ask"
+      permissionDecisionReason: reason || "via Claude Control Bar",
+    },
+  };
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${HOST}`);
+  const { pathname } = url;
+
+  // --- Health ------------------------------------------------------------
+  if (req.method === "GET" && pathname === "/health") {
+    return sendJSON(res, 200, { ok: true, ts: Date.now() });
+  }
+
+  // --- Live state --------------------------------------------------------
+  if (req.method === "GET" && pathname === "/state") {
+    return sendJSON(res, 200, snapshot());
+  }
+
+  // --- SSE stream --------------------------------------------------------
+  if (req.method === "GET" && pathname === "/events") {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    res.write(`data: ${JSON.stringify(snapshot())}\n\n`);
+    sseClients.add(res);
+    req.on("close", () => sseClients.delete(res));
+    return;
+  }
+
+  // --- Hook ingest -------------------------------------------------------
+  if (req.method === "POST" && pathname === "/hook") {
+    const payload = await readBody(req);
+    appendEventLog({ dir: "in", payload });
+    sessions.upsertFromHook(payload);
+
+    // A permission gate: hold the response open until a decision arrives.
+    if (isPermissionGate(payload)) {
+      const id = pending.hold({
+        sessionId: payload.session_id,
+        cwd: payload.cwd,
+        tool: payload.tool_name,
+        input: payload.tool_input,
+        timeoutMs: payload.timeout_ms,
+        respond: (decision, reason) => {
+          sessions.markNeeds(payload.session_id, false);
+          appendEventLog({ dir: "decision", id, decision, reason });
+          sendJSON(res, 200, decisionOutput(decision, reason));
+          broadcast();
+        },
+      });
+      sessions.markNeeds(payload.session_id, true);
+      log(`held permission request ${id} (${payload.tool_name})`);
+      broadcast();
+      return; // response deliberately NOT sent yet
+    }
+
+    // Non-gate events: acknowledge immediately.
+    broadcast();
+    return sendJSON(res, 200, { ok: true });
+  }
+
+  // --- Decision (Allow / Deny from the UI) -------------------------------
+  if (req.method === "POST" && pathname === "/decision") {
+    const { id, decision, reason } = await readBody(req);
+    if (!id || !["allow", "deny", "ask"].includes(decision)) {
+      return sendJSON(res, 400, { error: "need {id, decision: allow|deny|ask}" });
+    }
+    const ok = pending.resolve(id, decision, reason);
+    return sendJSON(res, ok ? 200 : 404, { ok });
+  }
+
+  // --- tmux: launch an Owned session -------------------------------------
+  if (req.method === "POST" && pathname === "/tmux/launch") {
+    const { cwd, name, flags } = await readBody(req);
+    try {
+      const info = await tmux.launch({ cwd, name, flags });
+      sessions.registerOwned(info.name, { cwd, tmux: info.name });
+      broadcast();
+      return sendJSON(res, 200, info);
+    } catch (e) {
+      return sendJSON(res, 500, { error: String(e.message || e) });
+    }
+  }
+
+  // --- tmux: send a short input / nudge ----------------------------------
+  if (req.method === "POST" && pathname === "/tmux/send") {
+    const { name, text } = await readBody(req);
+    try {
+      await tmux.sendKeys(name, text);
+      return sendJSON(res, 200, { ok: true });
+    } catch (e) {
+      return sendJSON(res, 500, { error: String(e.message || e) });
+    }
+  }
+
+  sendJSON(res, 404, { error: "not found" });
+});
+
+server.listen(PORT, HOST, () => {
+  const { port } = server.address();
+  writePort(port);
+  log(`bridge listening on http://${HOST}:${port}`);
+  log(`port written to ${readPort() === port ? "port file ✓" : "port file ✗"}`);
+  log(`event log: ${EVENT_LOG}`);
+});
+
+// Heartbeat keeps SSE connections warm.
+const hb = setInterval(() => {
+  for (const res of sseClients) {
+    try {
+      res.write(": ping\n\n");
+    } catch {
+      sseClients.delete(res);
+    }
+  }
+}, 15_000);
+if (typeof hb.unref === "function") hb.unref();
+
+process.on("SIGINT", () => {
+  log("shutting down");
+  server.close(() => process.exit(0));
+});
