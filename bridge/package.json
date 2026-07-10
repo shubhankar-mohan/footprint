@@ -13,7 +13,7 @@
   "scripts": {
     "start": "node server.js",
     "cli": "node cli.mjs",
-    "test": "node test/smoke.mjs",
+    "test": "node --test test/*.test.mjs && node test/smoke.mjs",
     "install-hooks": "node scripts/install-hooks.mjs",
     "uninstall-hooks": "node scripts/uninstall-hooks.mjs"
   }
