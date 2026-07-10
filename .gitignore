@@ -21,6 +21,8 @@ yarn-error.log*
 
 # ─── Swift / Xcode (app — added in Phase 1) ──────────────
 build/
+.build/
+*.app
 DerivedData/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
