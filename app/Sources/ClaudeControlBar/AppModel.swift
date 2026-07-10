@@ -10,6 +10,7 @@ import CCBarCore
 final class AppModel: ObservableObject {
   @Published var snapshot: Snapshot = .empty
   @Published var connected = false
+  @Published var hooksInstalled = false
 
   private let supervisor = BridgeSupervisor()
   private let client = BridgeClient()
@@ -19,6 +20,7 @@ final class AppModel: ObservableObject {
   init() {
     supervisor.start()
     Notifier.requestAuth()
+    hooksInstalled = HookInstaller.isInstalled()
     streamTask = Task { @MainActor [weak self] in
       guard let self else { return }
       for await raw in self.client.stream() {
@@ -35,5 +37,22 @@ final class AppModel: ObservableObject {
 
   func decide(_ id: String, _ decision: String) {
     Task { [client] in await client.decide(id: id, decision: decision) }
+  }
+
+  // Hook install/uninstall run off the main thread (they spawn node + touch disk).
+  func installHooks() { runHook { HookInstaller.install() } }
+  func uninstallHooks() { runHook { HookInstaller.uninstall() } }
+  func previewDiff(_ completion: @escaping (String) -> Void) {
+    DispatchQueue.global().async {
+      let out = HookInstaller.previewDiff()
+      DispatchQueue.main.async { completion(out) }
+    }
+  }
+  private func runHook(_ work: @escaping () -> String) {
+    DispatchQueue.global().async {
+      _ = work()
+      let installed = HookInstaller.isInstalled()
+      DispatchQueue.main.async { self.hooksInstalled = installed }
+    }
   }
 }

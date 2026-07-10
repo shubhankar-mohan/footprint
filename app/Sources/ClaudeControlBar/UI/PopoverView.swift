@@ -4,13 +4,24 @@ import CCBarCore
 struct PopoverView: View {
   @ObservedObject var model: AppModel
   let onDecide: (String, String) -> Void
+  @State private var showSettings = false
 
   var body: some View {
+    if showSettings {
+      SettingsView(model: model, show: $showSettings)
+    } else {
+      main
+    }
+  }
+
+  private var main: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
         Text("Claude Control Bar").font(.system(size: 12, weight: .semibold))
         Spacer()
         Circle().fill(model.connected ? Color.green : Color.secondary).frame(width: 6, height: 6)
+        Button { showSettings = true } label: { Image(systemName: "gearshape") }
+          .buttonStyle(.plain).foregroundStyle(.secondary)
       }
       .padding(.horizontal, 12).padding(.vertical, 8)
       Divider()
@@ -23,9 +34,7 @@ struct PopoverView: View {
       }
 
       if model.snapshot.sessions.isEmpty {
-        Text("The map is quiet.")
-          .font(.system(size: 13)).foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity).padding(.vertical, 28)
+        emptyState
       } else {
         ForEach(sorted(model.snapshot.sessions)) { s in SessionRowView(session: s) }
       }
@@ -40,6 +49,19 @@ struct PopoverView: View {
       .padding(.horizontal, 12).padding(.vertical, 6)
     }
     .frame(width: 320)
+  }
+
+  @ViewBuilder private var emptyState: some View {
+    VStack(spacing: 8) {
+      Text("The map is quiet.").font(.system(size: 13)).foregroundStyle(.secondary)
+      if !model.hooksInstalled {
+        Text("Monitoring is off, so sessions won't appear.")
+          .font(.system(size: 11)).foregroundStyle(.tertiary)
+        Button("Enable monitoring") { showSettings = true }
+          .font(.system(size: 12, weight: .semibold)).buttonStyle(.borderedProminent)
+      }
+    }
+    .frame(maxWidth: .infinity).padding(.vertical, 24)
   }
 
   // needs > working > paused > idle, then stable by project name.
