@@ -52,13 +52,13 @@ export function findByCall(sessionId, tool, input) {
 
 // Resolve a held request with a decision: "allow" | "deny" | "ask".
 // Returns true if it was still pending.
-export function resolve(id, decision, reason = "") {
+export function resolve(id, decision, reason = "", updatedInput = null) {
   const p = pending.get(id);
   if (!p) return false;
   clearTimeout(p.timer);
   pending.delete(id);
   try {
-    p.respond(decision, reason);
+    p.respond(decision, reason, updatedInput);
   } catch {
     // response already gone; nothing to do
   }

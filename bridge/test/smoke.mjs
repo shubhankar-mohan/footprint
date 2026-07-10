@@ -52,6 +52,22 @@ function sendGatedHook(sessionId, command) {
   }).then((r) => r.json());
 }
 
+// Fire a PermissionRequest hook POST that BLOCKS; return its response promise.
+function sendPermissionRequest(sessionId, command) {
+  return fetch(base + "/hook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      cwd: "/tmp/scratch",
+      hook_event_name: "PermissionRequest",
+      tool_name: "Bash",
+      tool_input: { command },
+      timeout_ms: 3000,
+    }),
+  }).then((r) => r.json());
+}
+
 async function main() {
   const server = spawn("node", [path.join(__dirname, "..", "server.js")], {
     env: { ...process.env, CCBAR_PORT: String(PORT) },
@@ -121,6 +137,31 @@ async function main() {
       d3.hookSpecificOutput.permissionDecision === "ask",
       "unanswered request times out to 'ask' (falls back to Claude's own prompt)"
     );
+
+    // 7. PermissionRequest holds and resolves with decision.behavior
+    const heldPR = sendPermissionRequest("sess-2", "echo hi");
+    await sleep(150);
+    state = await api("/state");
+    const pr = state.pending.find((p) => p.sessionId === "sess-2");
+    ok(pr && pr.channel === "permissionRequest", "PermissionRequest is held with channel=permissionRequest");
+    await api("/decision", "POST", { id: pr.id, decision: "allow", updatedInput: { command: "echo hi" } });
+    const prOut = await heldPR;
+    ok(prOut.hookSpecificOutput.decision.behavior === "allow", "PermissionRequest resolves with decision.behavior=allow");
+    ok(prOut.hookSpecificOutput.decision.updatedInput.command === "echo hi", "PermissionRequest carries updatedInput");
+
+    // 8. Dedupe: PreToolUse + PermissionRequest for the same call → one pending
+    const a = sendGatedHook("sess-3", "ls -la");
+    await sleep(80);
+    const b = sendPermissionRequest("sess-3", "ls -la");
+    await sleep(120);
+    state = await api("/state");
+    ok(
+      state.pending.filter((p) => p.sessionId === "sess-3").length === 1,
+      "PreToolUse + PermissionRequest for one call dedupe to a single pending"
+    );
+    const dupe = state.pending.find((p) => p.sessionId === "sess-3");
+    await api("/decision", "POST", { id: dupe.id, decision: "deny" });
+    await Promise.race([a, b]);
 
     console.log(`\nALL ${pass} CHECKS PASSED ✓`);
   } finally {

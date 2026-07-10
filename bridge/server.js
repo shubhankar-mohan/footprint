@@ -22,6 +22,7 @@ import {
 } from "./lib/paths.js";
 import * as sessions from "./lib/sessions.js";
 import * as pending from "./lib/pending.js";
+import { decisionOutput } from "./lib/hookdecision.js";
 import * as tmux from "./scripts/tmux.mjs";
 
 const HOST = "127.0.0.1";
@@ -87,22 +88,12 @@ function readBody(req) {
 }
 
 // Is this hook event a permission gate we should hold open?
-// Claude Code fires PreToolUse for permission-gated tools; the hook may return
-// a permissionDecision. We only hold PreToolUse events flagged as needing a gate
-// (the hook script sets `gate: true`), so ordinary PreToolUse still flows.
+// PermissionRequest (the official approval channel) always gates. PreToolUse
+// gates only when the hook shim flags it (`gate: true`) for a watched tool, so
+// ordinary PreToolUse events still flow straight through.
 function isPermissionGate(payload) {
+  if (payload.hook_event_name === "PermissionRequest") return true;
   return payload.hook_event_name === "PreToolUse" && payload.gate === true;
-}
-
-// Emit the Claude Code PreToolUse decision shape the hook will print to stdout.
-function decisionOutput(decision, reason) {
-  return {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: decision, // "allow" | "deny" | "ask"
-      permissionDecisionReason: reason || "via Claude Control Bar",
-    },
-  };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -140,21 +131,44 @@ const server = http.createServer(async (req, res) => {
 
     // A permission gate: hold the response open until a decision arrives.
     if (isPermissionGate(payload)) {
+      const channel =
+        payload.hook_event_name === "PermissionRequest" ? "permissionRequest" : "preToolUse";
+
+      // Dedupe: if the other channel already holds this exact call, don't
+      // double-prompt. Resolve THIS hook to passthrough and keep the one pending.
+      const existing = pending.findByCall(
+        payload.session_id,
+        payload.tool_name,
+        payload.tool_input
+      );
+      if (existing) {
+        const out = decisionOutput(channel, "ask");
+        if (out) return sendJSON(res, 200, out);
+        res.writeHead(200, { "Content-Type": "application/json", "Content-Length": 2 });
+        return res.end("{}");
+      }
+
       const id = pending.hold({
         sessionId: payload.session_id,
         cwd: payload.cwd,
         tool: payload.tool_name,
         input: payload.tool_input,
+        channel,
         timeoutMs: payload.timeout_ms,
-        respond: (decision, reason) => {
+        respond: (decision, reason, updatedInput) => {
           sessions.markNeeds(payload.session_id, false);
-          appendEventLog({ dir: "decision", id, decision, reason });
-          sendJSON(res, 200, decisionOutput(decision, reason));
+          appendEventLog({ dir: "decision", id, channel, decision, reason });
+          const out = decisionOutput(channel, decision, reason, updatedInput);
+          if (out) sendJSON(res, 200, out);
+          else {
+            res.writeHead(200, { "Content-Type": "application/json", "Content-Length": 2 });
+            res.end("{}"); // passthrough: hook prints nothing
+          }
           broadcast();
         },
       });
       sessions.markNeeds(payload.session_id, true);
-      log(`held permission request ${id} (${payload.tool_name})`);
+      log(`held ${channel} request ${id} (${payload.tool_name})`);
       broadcast();
       return; // response deliberately NOT sent yet
     }
@@ -166,11 +180,11 @@ const server = http.createServer(async (req, res) => {
 
   // --- Decision (Allow / Deny from the UI) -------------------------------
   if (req.method === "POST" && pathname === "/decision") {
-    const { id, decision, reason } = await readBody(req);
+    const { id, decision, reason, updatedInput } = await readBody(req);
     if (!id || !["allow", "deny", "ask"].includes(decision)) {
       return sendJSON(res, 400, { error: "need {id, decision: allow|deny|ask}" });
     }
-    const ok = pending.resolve(id, decision, reason);
+    const ok = pending.resolve(id, decision, reason, updatedInput);
     return sendJSON(res, ok ? 200 : 404, { ok });
   }
 
