@@ -28,6 +28,8 @@ export function upsertFromHook(payload) {
   };
 
   if (payload.cwd) existing.cwd = payload.cwd;
+  // A discovered (best-effort) session that's now firing hooks is really Attached.
+  if (existing.tier === "best-effort") existing.tier = "attached";
 
   const event = payload.hook_event_name || payload.event || "";
   switch (event) {
