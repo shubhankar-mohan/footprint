@@ -41,19 +41,38 @@ public struct SessionMapEntry: Codable, Equatable, Sendable {
   public var project: String?
 }
 
+public struct UsageWindow: Codable, Equatable, Sendable {
+  public var usedPercentage: Double?
+  public var resetsAt: Double? // epoch seconds
+  enum CodingKeys: String, CodingKey {
+    case usedPercentage = "used_percentage"
+    case resetsAt = "resets_at"
+  }
+}
+
+public struct Usage: Codable, Equatable, Sendable {
+  public var fiveHour: UsageWindow?
+  public var sevenDay: UsageWindow?
+  /// The higher of the two windows, for glyph/visibility decisions.
+  public var peakPercentage: Double {
+    max(fiveHour?.usedPercentage ?? 0, sevenDay?.usedPercentage ?? 0)
+  }
+}
+
 public struct Snapshot: Codable, Equatable, Sendable {
   public var sessions: [Session]
   public var pending: [Pending]
   public var aggregate: SessionState
   public var sessionMap: [String: SessionMapEntry]?
+  public var usage: Usage?
   public var ts: Double?
 
   public init(
     sessions: [Session], pending: [Pending], aggregate: SessionState,
-    sessionMap: [String: SessionMapEntry]? = nil, ts: Double? = nil
+    sessionMap: [String: SessionMapEntry]? = nil, usage: Usage? = nil, ts: Double? = nil
   ) {
     self.sessions = sessions; self.pending = pending; self.aggregate = aggregate
-    self.sessionMap = sessionMap; self.ts = ts
+    self.sessionMap = sessionMap; self.usage = usage; self.ts = ts
   }
 
   public static let empty = Snapshot(sessions: [], pending: [], aggregate: .idle, sessionMap: [:])

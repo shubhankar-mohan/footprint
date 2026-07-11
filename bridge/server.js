@@ -23,6 +23,7 @@ import {
 import * as sessions from "./lib/sessions.js";
 import * as pending from "./lib/pending.js";
 import * as sessionMap from "./lib/session-map.js";
+import * as usage from "./lib/usage.js";
 import { decisionOutput } from "./lib/hookdecision.js";
 import * as tmux from "./scripts/tmux.mjs";
 import * as revealer from "./scripts/reveal.mjs";
@@ -52,6 +53,7 @@ function snapshot() {
     pending: pending.list(),
     aggregate: sessions.aggregateState(),
     sessionMap: sessionMap.all(),
+    usage: usage.get(),
     ts: Date.now(),
   };
 }
@@ -227,6 +229,14 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       return sendJSON(res, 500, { error: String(e.message || e) });
     }
+  }
+
+  // --- usage: statusline rate_limits ingest ------------------------------
+  if (req.method === "POST" && pathname === "/usage") {
+    const body = await readBody(req);
+    usage.set(body);
+    broadcast();
+    return sendJSON(res, 200, { ok: true });
   }
 
   // --- reveal: jump to a session's terminal ------------------------------

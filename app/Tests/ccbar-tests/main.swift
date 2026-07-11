@@ -33,6 +33,13 @@ let minimal = try! JSONDecoder().decode(
   Snapshot.self, from: Data(#"{"sessions":[],"pending":[],"aggregate":"idle"}"#.utf8))
 check(minimal.sessions.isEmpty, "tolerates missing sessionMap/ts")
 
+// 3b. Usage (statusline rate_limits) decodes
+let usageJSON = #"{"sessions":[],"pending":[],"aggregate":"idle","usage":{"fiveHour":{"used_percentage":42.5,"resets_at":1738425600},"sevenDay":{"used_percentage":10,"resets_at":1738857600}}}"#
+let us = try! JSONDecoder().decode(Snapshot.self, from: Data(usageJSON.utf8))
+check(us.usage?.fiveHour?.usedPercentage == 42.5, "decodes usage.fiveHour.used_percentage")
+check(us.usage?.fiveHour?.resetsAt == 1738425600, "decodes usage resets_at (epoch)")
+check(us.usage?.peakPercentage == 42.5, "usage peakPercentage = max window")
+
 // 4. SessionStore reports newly-needs sessions once
 let store = SessionStore()
 _ = store.apply(Data(#"{"sessions":[{"id":"a","state":"working"}],"pending":[],"aggregate":"working"}"#.utf8))

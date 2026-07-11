@@ -39,6 +39,12 @@ function main() {
   }
   if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
 
+  // Remove our statusLine too (only if it's ours).
+  if (settings.statusLine && (settings.statusLine.command || "").includes("cc-statusline.mjs")) {
+    delete settings.statusLine;
+    console.log("removed Claude Control Bar statusLine.");
+  }
+
   console.log(`removed ${removed} Claude Control Bar hook entr${removed === 1 ? "y" : "ies"}.`);
   console.log("── resulting hooks ──");
   console.log(JSON.stringify(settings.hooks || {}, null, 2));

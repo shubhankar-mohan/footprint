@@ -38,6 +38,12 @@ struct PopoverView: View {
         Divider()
       }
 
+      // Usage hourglass — hidden below 50% (calm until it matters).
+      if let u = model.snapshot.usage, u.peakPercentage >= 50 {
+        HourglassView(usage: u)
+        Divider()
+      }
+
       if model.snapshot.sessions.isEmpty {
         emptyState
       } else {

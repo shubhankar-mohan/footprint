@@ -23,6 +23,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOOK_CMD = `node "${path.resolve(__dirname, "../hooks/cc-hook.mjs")}"`;
+const STATUSLINE_CMD = `node "${path.resolve(__dirname, "../hooks/cc-statusline.mjs")}"`;
 const DRY = process.argv.includes("--dry");
 
 // Timeouts are in SECONDS. The gate timeout must exceed the bridge's hold
@@ -72,6 +73,11 @@ function merge(settings) {
     // Drop any prior copies of ours (idempotent re-install), keep the user's.
     const kept = arr.filter((e) => !isOurs(e));
     out.hooks[event] = [...kept, ...structuredClone(entries)];
+  }
+  // Usage hourglass: set our statusLine ONLY if the user has none — never clobber
+  // a status line they already configured.
+  if (!out.statusLine) {
+    out.statusLine = { type: "command", command: STATUSLINE_CMD, refreshInterval: 5 };
   }
   return out;
 }
