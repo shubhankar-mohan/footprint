@@ -49,13 +49,9 @@ struct PopoverView: View {
       } else {
         ForEach(sorted(model.snapshot.sessions)) { s in
           SessionRowView(session: s, onReveal: { model.revealSession(s) })
-          if s.tier == .owned, let name = s.tmux {
-            OwnedInputBar(
-              name: name,
-              autoResumeOn: model.snapshot.autoResume?.contains(name) ?? false,
-              onSend: { model.sendInput($0, $1) },
-              onAutoResume: { model.setAutoResume(name, $0) }
-            )
+          // Input only when an Owned session is actually waiting on you.
+          if s.state == .needs, s.tier == .owned, let name = s.tmux {
+            OwnedInputBar(name: name, lastLine: s.lastLine, onSend: { model.sendInput($0, $1) })
           }
         }
       }

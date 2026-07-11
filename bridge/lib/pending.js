@@ -13,7 +13,7 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
 
 // Park a held request. `respond(decision)` is called exactly once, either by a
 // user decision or by the timeout. Returns the pending id.
-export function hold({ sessionId, cwd, tool, input, channel, respond, timeoutMs }) {
+export function hold({ sessionId, cwd, tool, input, channel, context, respond, timeoutMs }) {
   const id = randomUUID();
   const ms = Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS;
 
@@ -29,6 +29,7 @@ export function hold({ sessionId, cwd, tool, input, channel, respond, timeoutMs 
     tool,
     input,
     channel: channel || "preToolUse",
+    context: context || null,
     respond,
     timer,
     createdAt: Date.now(),

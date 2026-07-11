@@ -74,6 +74,33 @@ export function setState(id, state) {
   }
 }
 
+export function setLastLine(id, text) {
+  const s = sessions.get(id);
+  if (s && text) s.lastLine = text;
+}
+
+export function setName(id, name) {
+  const s = sessions.get(id);
+  if (s && name) s.name = name;
+}
+
+// Register a session discovered from the transcript dir (best-effort tier).
+// Never overrides a session we already track live via hooks.
+export function registerDiscovered({ id, cwd, lastLine, updatedAt }) {
+  if (!id || sessions.has(id)) return;
+  sessions.set(id, {
+    id,
+    cwd: cwd || null,
+    tier: "best-effort",
+    tmux: null,
+    state: "idle",
+    tool: null,
+    lastLine: lastLine || null,
+    createdAt: updatedAt || now(),
+    updatedAt: updatedAt || now(),
+  });
+}
+
 export function markNeeds(id, on = true) {
   const s = sessions.get(id);
   if (s) {

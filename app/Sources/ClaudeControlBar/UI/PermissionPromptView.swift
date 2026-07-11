@@ -12,6 +12,10 @@ struct PermissionPromptView: View {
         Image(systemName: "pawprint.fill").foregroundStyle(Theme.color(.needs))
         Text("Allow \(pending.tool ?? "tool")?").font(.system(size: 13, weight: .bold))
       }
+      // What Claude just said, so you know what you're approving.
+      if let ctx = pending.context, !ctx.isEmpty {
+        Text(ctx).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(3)
+      }
       if let cmd = pending.command {
         Text(cmd)
           .font(.system(size: 11, design: .monospaced))

@@ -9,6 +9,7 @@ import * as tmux from "../scripts/tmux.mjs";
 
 const enabled = new Set(); // tmux session names with auto-resume on
 const timers = new Map(); // name -> timeout
+let globalOn = false; // when true, auto-resume applies to all Owned sessions
 
 // Banner strings Claude Code prints when a limit is hit (see claude-auto-retry).
 const LIMIT_RE = /(limit reached|hit your (usage |session |weekly )?limit|resets?\s+\d)/i;
@@ -28,6 +29,20 @@ export function isEnabled(name) {
 
 export function list() {
   return [...enabled];
+}
+
+export function setGlobal(on) {
+  globalOn = !!on;
+  if (!globalOn) for (const n of [...timers.keys()]) cancel(n);
+}
+
+export function globalEnabled() {
+  return globalOn;
+}
+
+// True if this session should auto-resume (global switch OR per-session opt-in).
+export function shouldResume(name) {
+  return globalOn || enabled.has(name);
 }
 
 // Is this captured pane text showing a usage-limit pause?

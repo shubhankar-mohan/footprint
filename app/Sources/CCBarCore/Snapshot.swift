@@ -15,10 +15,13 @@ public struct Session: Codable, Identifiable, Equatable, Sendable {
   public var tmux: String?
   public var state: SessionState
   public var tool: String?
+  public var name: String?
   public var lastLine: String?
   public var updatedAt: Double?
 
   public var project: String { cwd.flatMap { $0.split(separator: "/").last.map(String.init) } ?? "—" }
+  /// Preferred display title: the session's own name, else the project folder.
+  public var title: String { name ?? project }
 }
 
 public struct Pending: Codable, Identifiable, Equatable, Sendable {
@@ -27,6 +30,7 @@ public struct Pending: Codable, Identifiable, Equatable, Sendable {
   public var channel: Channel?
   public var tool: String?
   public var input: [String: JSONValue]?
+  public var context: String? // Claude's last message, for approval context
   public var createdAt: Double?
 
   public var command: String? {
@@ -39,6 +43,7 @@ public struct SessionMapEntry: Codable, Equatable, Sendable {
   public var cwd: String?
   public var tmux: String?
   public var project: String?
+  public var name: String?
 }
 
 public struct UsageWindow: Codable, Equatable, Sendable {
@@ -66,15 +71,17 @@ public struct Snapshot: Codable, Equatable, Sendable {
   public var sessionMap: [String: SessionMapEntry]?
   public var usage: Usage?
   public var autoResume: [String]?
+  public var autoResumeGlobal: Bool?
   public var ts: Double?
 
   public init(
     sessions: [Session], pending: [Pending], aggregate: SessionState,
     sessionMap: [String: SessionMapEntry]? = nil, usage: Usage? = nil,
-    autoResume: [String]? = nil, ts: Double? = nil
+    autoResume: [String]? = nil, autoResumeGlobal: Bool? = nil, ts: Double? = nil
   ) {
     self.sessions = sessions; self.pending = pending; self.aggregate = aggregate
-    self.sessionMap = sessionMap; self.usage = usage; self.autoResume = autoResume; self.ts = ts
+    self.sessionMap = sessionMap; self.usage = usage; self.autoResume = autoResume
+    self.autoResumeGlobal = autoResumeGlobal; self.ts = ts
   }
 
   public static let empty = Snapshot(sessions: [], pending: [], aggregate: .idle, sessionMap: [:])

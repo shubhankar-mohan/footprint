@@ -1,17 +1,18 @@
 import SwiftUI
 
-// Quick input for Owned (tmux) sessions: nudge chips + a one-line reply (relayed
-// via tmux send-keys), plus the per-session auto-resume toggle. For one-liners —
-// the terminal is for real prompts.
+// Quick input for an Owned session that's waiting on you: shows Claude's last
+// message for context, then nudge chips + a one-line reply (via tmux send-keys).
 struct OwnedInputBar: View {
   let name: String
-  let autoResumeOn: Bool
+  let lastLine: String?
   let onSend: (String, String) -> Void // (tmux name, text)
-  let onAutoResume: (Bool) -> Void
   @State private var text = ""
 
   var body: some View {
-    VStack(spacing: 4) {
+    VStack(alignment: .leading, spacing: 4) {
+      if let ctx = lastLine, !ctx.isEmpty {
+        Text(ctx).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+      }
       HStack(spacing: 6) {
         ForEach(["continue", "yes", "stop"], id: \.self) { chip in
           Button(chip) { onSend(name, chip) }
@@ -23,13 +24,6 @@ struct OwnedInputBar: View {
             let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !t.isEmpty { onSend(name, t); text = "" }
           }
-      }
-      HStack {
-        Toggle(isOn: Binding(get: { autoResumeOn }, set: { onAutoResume($0) })) {
-          Text("Auto-resume on limit").font(.system(size: 10)).foregroundStyle(.secondary)
-        }
-        .toggleStyle(.switch).controlSize(.mini)
-        Spacer()
       }
     }
     .padding(.horizontal, 12).padding(.bottom, 6)

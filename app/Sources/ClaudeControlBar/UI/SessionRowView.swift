@@ -11,7 +11,7 @@ struct SessionRowView: View {
       Image(systemName: Theme.symbol(session.state)).foregroundStyle(Theme.color(session.state))
       VStack(alignment: .leading, spacing: 1) {
         HStack(spacing: 6) {
-          Text(session.project).font(.system(size: 13, weight: .semibold))
+          Text(session.title).font(.system(size: 13, weight: .semibold))
           if let tier = session.tier {
             Text(tierLabel(tier))
               .font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)

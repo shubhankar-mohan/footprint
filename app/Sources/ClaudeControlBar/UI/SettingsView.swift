@@ -44,6 +44,18 @@ struct SettingsView: View {
         Spacer()
       }
       .font(.system(size: 12, weight: .semibold))
+
+      Divider().padding(.vertical, 2)
+
+      Toggle(isOn: Binding(
+        get: { model.snapshot.autoResumeGlobal ?? false },
+        set: { model.setAutoResumeGlobal($0) }
+      )) {
+        Text("Auto-resume Owned sessions on limit").font(.system(size: 12))
+      }
+      .toggleStyle(.switch).controlSize(.small)
+      Text("Injects “continue” into a tmux-owned session when its usage limit resets.")
+        .font(.system(size: 10)).foregroundStyle(.secondary)
     }
     .padding(12).frame(width: 320)
     .background(Theme.popoverBG)

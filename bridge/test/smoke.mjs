@@ -70,7 +70,7 @@ function sendPermissionRequest(sessionId, command) {
 
 async function main() {
   const server = spawn("node", [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, CCBAR_PORT: String(PORT) },
+    env: { ...process.env, CCBAR_PORT: String(PORT), CCBAR_NO_DISCOVER: "1" },
     stdio: "inherit",
   });
 

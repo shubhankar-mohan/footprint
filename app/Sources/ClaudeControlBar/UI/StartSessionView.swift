@@ -7,8 +7,10 @@ struct StartSessionView: View {
   @ObservedObject var model: AppModel
   @Binding var show: Bool
   @State private var cwd = ""
-  @State private var terminal = "Terminal"
   @State private var mode = "ask"
+  // Terminal.app only for now — it reliably runs `tmux attach`. iTerm/Warp launch
+  // support can return once verified (Warp can't run a command via its URI).
+  private let terminal = "Terminal"
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -28,11 +30,6 @@ struct StartSessionView: View {
           Button("Choose…") { chooseDir() }.controlSize(.small)
         }
       }
-
-      Picker("Terminal", selection: $terminal) {
-        Text("Terminal").tag("Terminal"); Text("iTerm").tag("iTerm"); Text("Warp").tag("Warp")
-      }
-      .pickerStyle(.segmented).font(.system(size: 11))
 
       Picker("Permission", selection: $mode) {
         Text("Ask (default)").tag("ask")

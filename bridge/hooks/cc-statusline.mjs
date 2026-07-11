@@ -58,6 +58,7 @@ async function main() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: p.session_id,
+          session_name: p.session_name,
           fiveHour: rl.five_hour,
           sevenDay: rl.seven_day,
         }),

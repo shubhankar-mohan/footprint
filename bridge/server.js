@@ -25,6 +25,7 @@ import * as pending from "./lib/pending.js";
 import * as sessionMap from "./lib/session-map.js";
 import * as usage from "./lib/usage.js";
 import * as autoresume from "./lib/autoresume.js";
+import * as transcript from "./lib/transcript.js";
 import { decisionOutput } from "./lib/hookdecision.js";
 import * as tmux from "./scripts/tmux.mjs";
 import * as revealer from "./scripts/reveal.mjs";
@@ -56,6 +57,7 @@ function snapshot() {
     sessionMap: sessionMap.all(),
     usage: usage.get(),
     autoResume: autoresume.list(),
+    autoResumeGlobal: autoresume.globalEnabled(),
     ts: Date.now(),
   };
 }
@@ -164,12 +166,19 @@ const server = http.createServer(async (req, res) => {
         return res.end("{}");
       }
 
+      // Read Claude's last message so the UI can show what you're approving.
+      const context = payload.transcript_path
+        ? transcript.lastAssistantText(payload.transcript_path)
+        : null;
+      if (context) sessions.setLastLine(payload.session_id, context);
+
       const id = pending.hold({
         sessionId: payload.session_id,
         cwd: payload.cwd,
         tool: payload.tool_name,
         input: payload.tool_input,
         channel,
+        context,
         timeoutMs: payload.timeout_ms,
         respond: (decision, reason, updatedInput) => {
           sessions.markNeeds(payload.session_id, false);
@@ -235,16 +244,26 @@ const server = http.createServer(async (req, res) => {
 
   // --- auto-resume toggle (Owned sessions) -------------------------------
   if (req.method === "POST" && pathname === "/autoresume") {
-    const { name, on } = await readBody(req);
-    autoresume.setEnabled(name, !!on);
+    const { name, on, global } = await readBody(req);
+    if (typeof global === "boolean") autoresume.setGlobal(global);
+    else autoresume.setEnabled(name, !!on);
     broadcast();
-    return sendJSON(res, 200, { ok: true, enabled: autoresume.list() });
+    return sendJSON(res, 200, {
+      ok: true,
+      enabled: autoresume.list(),
+      global: autoresume.globalEnabled(),
+    });
   }
 
   // --- usage: statusline rate_limits ingest ------------------------------
   if (req.method === "POST" && pathname === "/usage") {
     const body = await readBody(req);
     usage.set(body);
+    // The statusline payload carries a friendly session name — capture it.
+    if (body.session_id && body.session_name) {
+      sessions.setName(body.session_id, body.session_name);
+      sessionMap.set(body.session_id, { name: body.session_name });
+    }
     broadcast();
     return sendJSON(res, 200, { ok: true });
   }
@@ -269,6 +288,14 @@ server.listen(PORT, HOST, () => {
   log(`bridge listening on http://${HOST}:${port}`);
   log(`port written to ${readPort() === port ? "port file ✓" : "port file ✗"}`);
   log(`event log: ${EVENT_LOG}`);
+  // Best-effort: surface sessions already running before our hooks installed.
+  try {
+    const found = process.env.CCBAR_NO_DISCOVER ? [] : transcript.discoverSessions();
+    for (const s of found) sessions.registerDiscovered(s);
+    if (found.length) log(`discovered ${found.length} existing session(s) from transcripts`);
+  } catch {
+    /* best effort */
+  }
 });
 
 // Heartbeat keeps SSE connections warm.
@@ -287,7 +314,12 @@ if (typeof hb.unref === "function") hb.unref();
 // of enabled Owned sessions and, on a limit banner, schedule a `continue` at the
 // reset time (from the statusline rate_limits resets_at).
 const arPoll = setInterval(async () => {
-  const names = autoresume.list();
+  // Owned sessions with auto-resume on (per-session opt-in OR the global switch).
+  const owned = sessions
+    .all()
+    .filter((s) => s.tier === "owned")
+    .map((s) => s.tmux || s.id);
+  const names = owned.filter((n) => autoresume.shouldResume(n));
   if (!names.length) return;
   if (!(await tmux.hasTmux())) return;
   const u = usage.get();
