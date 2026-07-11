@@ -65,14 +65,16 @@ public struct Snapshot: Codable, Equatable, Sendable {
   public var aggregate: SessionState
   public var sessionMap: [String: SessionMapEntry]?
   public var usage: Usage?
+  public var autoResume: [String]?
   public var ts: Double?
 
   public init(
     sessions: [Session], pending: [Pending], aggregate: SessionState,
-    sessionMap: [String: SessionMapEntry]? = nil, usage: Usage? = nil, ts: Double? = nil
+    sessionMap: [String: SessionMapEntry]? = nil, usage: Usage? = nil,
+    autoResume: [String]? = nil, ts: Double? = nil
   ) {
     self.sessions = sessions; self.pending = pending; self.aggregate = aggregate
-    self.sessionMap = sessionMap; self.usage = usage; self.ts = ts
+    self.sessionMap = sessionMap; self.usage = usage; self.autoResume = autoResume; self.ts = ts
   }
 
   public static let empty = Snapshot(sessions: [], pending: [], aggregate: .idle, sessionMap: [:])

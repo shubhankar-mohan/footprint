@@ -24,6 +24,7 @@ import * as sessions from "./lib/sessions.js";
 import * as pending from "./lib/pending.js";
 import * as sessionMap from "./lib/session-map.js";
 import * as usage from "./lib/usage.js";
+import * as autoresume from "./lib/autoresume.js";
 import { decisionOutput } from "./lib/hookdecision.js";
 import * as tmux from "./scripts/tmux.mjs";
 import * as revealer from "./scripts/reveal.mjs";
@@ -54,6 +55,7 @@ function snapshot() {
     aggregate: sessions.aggregateState(),
     sessionMap: sessionMap.all(),
     usage: usage.get(),
+    autoResume: autoresume.list(),
     ts: Date.now(),
   };
 }
@@ -231,6 +233,14 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // --- auto-resume toggle (Owned sessions) -------------------------------
+  if (req.method === "POST" && pathname === "/autoresume") {
+    const { name, on } = await readBody(req);
+    autoresume.setEnabled(name, !!on);
+    broadcast();
+    return sendJSON(res, 200, { ok: true, enabled: autoresume.list() });
+  }
+
   // --- usage: statusline rate_limits ingest ------------------------------
   if (req.method === "POST" && pathname === "/usage") {
     const body = await readBody(req);
@@ -272,6 +282,27 @@ const hb = setInterval(() => {
   }
 }, 15_000);
 if (typeof hb.unref === "function") hb.unref();
+
+// Auto-resume poll: no hook fires on a usage-limit pause, so we capture the pane
+// of enabled Owned sessions and, on a limit banner, schedule a `continue` at the
+// reset time (from the statusline rate_limits resets_at).
+const arPoll = setInterval(async () => {
+  const names = autoresume.list();
+  if (!names.length) return;
+  if (!(await tmux.hasTmux())) return;
+  const u = usage.get();
+  for (const name of names) {
+    if (autoresume.isScheduled(name)) continue;
+    const pane = await tmux.capturePane(name);
+    if (autoresume.detectLimit(pane)) {
+      sessions.setState(name, "paused");
+      const resetsAt = u?.fiveHour?.resets_at;
+      if (resetsAt) autoresume.scheduleResume(name, resetsAt);
+      broadcast();
+    }
+  }
+}, 20_000);
+if (typeof arPoll.unref === "function") arPoll.unref();
 
 process.on("SIGINT", () => {
   log("shutting down");

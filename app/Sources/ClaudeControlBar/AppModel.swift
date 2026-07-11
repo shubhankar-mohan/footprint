@@ -61,6 +61,10 @@ final class AppModel: ObservableObject {
     Task { [client] in await client.sendInput(name: name, text: text) }
   }
 
+  func setAutoResume(_ name: String, _ on: Bool) {
+    Task { [client] in await client.setAutoResume(name: name, on: on) }
+  }
+
   // Hook install/uninstall run off the main thread (they spawn node + touch disk).
   func installHooks() { runHook { HookInstaller.install() } }
   func uninstallHooks() { runHook { HookInstaller.uninstall() } }

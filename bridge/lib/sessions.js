@@ -66,6 +66,14 @@ export function upsertFromHook(payload) {
   return existing;
 }
 
+export function setState(id, state) {
+  const s = sessions.get(id);
+  if (s) {
+    s.state = state;
+    s.updatedAt = now();
+  }
+}
+
 export function markNeeds(id, on = true) {
   const s = sessions.get(id);
   if (s) {

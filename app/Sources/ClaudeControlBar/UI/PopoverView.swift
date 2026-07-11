@@ -50,7 +50,12 @@ struct PopoverView: View {
         ForEach(sorted(model.snapshot.sessions)) { s in
           SessionRowView(session: s, onReveal: { model.revealSession(s) })
           if s.tier == .owned, let name = s.tmux {
-            OwnedInputBar(name: name, onSend: { model.sendInput($0, $1) })
+            OwnedInputBar(
+              name: name,
+              autoResumeOn: model.snapshot.autoResume?.contains(name) ?? false,
+              onSend: { model.sendInput($0, $1) },
+              onAutoResume: { model.setAutoResume(name, $0) }
+            )
           }
         }
       }

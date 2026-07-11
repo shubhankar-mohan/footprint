@@ -67,6 +67,10 @@ public struct BridgeClient {
     await post("tmux/send", ["name": name, "text": text])
   }
 
+  public func setAutoResume(name: String, on: Bool) async {
+    await post("autoresume", ["name": name, "on": on])
+  }
+
   public func reveal(session: String?, tier: String?, app: String?, pid: Int?) async {
     var body: [String: Any] = [:]
     if let session { body["session"] = session }

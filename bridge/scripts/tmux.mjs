@@ -69,6 +69,16 @@ export async function sendContinue(session) {
   return sendKeys(session, "continue");
 }
 
+// Capture the visible pane text of a session (for limit detection).
+export async function capturePane(session) {
+  try {
+    const { stdout } = await pexec("tmux", ["capture-pane", "-p", "-t", session]);
+    return stdout;
+  } catch {
+    return "";
+  }
+}
+
 export async function listSessions() {
   try {
     const { stdout } = await pexec("tmux", ["list-sessions", "-F", "#{session_name}"]);
