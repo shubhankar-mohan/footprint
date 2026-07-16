@@ -18,8 +18,65 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const PORT_FILE = path.join(os.homedir(), ".claude-control-bar", "port");
+
+// --- Terminal identity ------------------------------------------------------
+// The hook runs as a descendant of the `claude` process, sharing its controlling
+// tty, so we can learn WHICH terminal a session lives in — the piece hooks don't
+// give us — while that ancestry is still alive. Computed once per event and sent
+// to the bridge so click-to-reveal can focus the right app/tab. All best-effort.
+
+function ps(args) {
+  try {
+    return execFileSync("ps", args, { timeout: 500 }).toString().trim();
+  } catch {
+    return "";
+  }
+}
+
+// The controlling tty of this hook process, e.g. "ttys004" — often "??" because
+// Claude Code spawns hooks without a controlling terminal, so we also probe the
+// ancestry below.
+function selfTty() {
+  const t = ps(["-o", "tty=", "-p", String(process.pid)]);
+  return t && t !== "??" ? t : null;
+}
+
+// Map a ps `comm` (executable path) to a known terminal app name.
+function matchTerminal(comm) {
+  const c = comm || "";
+  if (/Warp\.app/i.test(c)) return "Warp";
+  if (/iTerm/i.test(c)) return "iTerm";
+  if (/Terminal\.app/i.test(c)) return "Terminal";
+  if (/WezTerm|wezterm/i.test(c)) return "WezTerm";
+  if (/Alacritty/i.test(c)) return "Alacritty";
+  if (/kitty/i.test(c)) return "kitty";
+  if (/Hyper/i.test(c)) return "Hyper";
+  if (/Ghostty/i.test(c)) return "Ghostty";
+  if (/Tabby/i.test(c)) return "Tabby";
+  return null;
+}
+
+// Walk up the process ancestry to find the owning terminal app AND a real tty.
+// The hook's own process usually has no controlling terminal, but the interactive
+// `claude`/shell ancestors do — that tty is what iTerm/Terminal match a tab on.
+function detectTerminal() {
+  let tty = selfTty();
+  let app = null;
+  let cur = process.ppid;
+  for (let i = 0; i < 12 && cur > 1; i++) {
+    const out = ps(["-o", "ppid=,tty=,comm=", "-p", String(cur)]);
+    const m = out.match(/^(\d+)\s+(\S+)\s+(.*)$/);
+    if (!m) break;
+    if (!tty && m[2] && m[2] !== "??") tty = m[2];
+    if (!app) app = matchTerminal(m[3]);
+    if (app && tty) break;
+    cur = Number.parseInt(m[1], 10);
+  }
+  return { tty, terminalApp: app };
+}
 const GATE_TOOLS = (process.env.CCBAR_GATE_TOOLS ||
   "Bash,Write,Edit,MultiEdit,NotebookEdit")
   .split(",")
@@ -74,7 +131,14 @@ async function main() {
       (event === "PreToolUse" && GATE_TOOLS.includes(tool)));
 
   const url = `http://127.0.0.1:${port}/hook`;
-  const body = JSON.stringify({ ...payload, gate: isGate, timeout_ms: TIMEOUT_MS });
+  const { tty, terminalApp } = detectTerminal();
+  const body = JSON.stringify({
+    ...payload,
+    gate: isGate,
+    timeout_ms: TIMEOUT_MS,
+    tty,
+    terminalApp,
+  });
 
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), TIMEOUT_MS + 2000);

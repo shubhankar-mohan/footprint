@@ -24,7 +24,12 @@ struct SessionRowView: View {
       }
       Spacer()
       if hovering {
-        Image(systemName: "arrow.up.forward.app").font(.system(size: 11)).foregroundStyle(.secondary)
+        HStack(spacing: 3) {
+          if let app = session.terminalApp {
+            Text(app).font(.system(size: 10)).foregroundStyle(.secondary)
+          }
+          Image(systemName: "arrow.up.forward.app").font(.system(size: 11)).foregroundStyle(.secondary)
+        }
       } else if let t = session.updatedAt {
         Text(relative(t)).font(.system(size: 11)).foregroundStyle(.tertiary)
       }
@@ -34,7 +39,8 @@ struct SessionRowView: View {
     .contentShape(Rectangle())
     .onHover { hovering = $0 }
     .onTapGesture { onReveal() }
-    .help("Click to open this session's terminal")
+    .help(session.terminalApp.map { "Click to open this session in \($0)" }
+      ?? "Click to open this session's terminal")
   }
 
   private func tierLabel(_ t: Tier) -> String {

@@ -17,6 +17,8 @@ public struct Session: Codable, Identifiable, Equatable, Sendable {
   public var tool: String?
   public var name: String?
   public var lastLine: String?
+  public var tty: String?
+  public var terminalApp: String?  // Warp / iTerm / Terminal … for the reveal hint
   public var updatedAt: Double?
 
   public var project: String { cwd.flatMap { $0.split(separator: "/").last.map(String.init) } ?? "—" }

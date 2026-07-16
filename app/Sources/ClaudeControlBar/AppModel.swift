@@ -52,8 +52,10 @@ final class AppModel: ObservableObject {
   }
 
   func revealSession(_ s: Session) {
+    // Send only the session id; the bridge resolves the terminal identity it
+    // captured from this session's hooks (tmux / tty / terminalApp).
     Task { [client] in
-      await client.reveal(session: s.tmux, tier: s.tier?.rawValue, app: "Terminal", pid: nil)
+      await client.reveal(sessionId: s.id, session: s.tmux, tier: s.tier?.rawValue)
     }
   }
 

@@ -270,9 +270,18 @@ const server = http.createServer(async (req, res) => {
 
   // --- reveal: jump to a session's terminal ------------------------------
   if (req.method === "POST" && pathname === "/reveal") {
-    const { session, tier, app, pid } = await readBody(req);
+    const { sessionId, session, tier, app, pid } = await readBody(req);
+    // The bridge is authoritative for a session's terminal identity: look up the
+    // stored tier / tmux target / tty / terminalApp captured from its hooks.
+    const s = sessionId ? sessions.get(sessionId) : null;
     try {
-      const r = await revealer.reveal({ tier, session, app, pid });
+      const r = await revealer.reveal({
+        tier: tier || s?.tier,
+        session: session || s?.tmux,
+        app: app || s?.terminalApp,
+        tty: s?.tty,
+        pid: pid || s?.pid,
+      });
       return sendJSON(res, 200, r);
     } catch (e) {
       return sendJSON(res, 500, { error: String(e.message || e) });

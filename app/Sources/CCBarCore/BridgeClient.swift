@@ -75,8 +75,12 @@ public struct BridgeClient {
     await post("autoresume", ["global": on])
   }
 
-  public func reveal(session: String?, tier: String?, app: String?, pid: Int?) async {
+  public func reveal(
+    sessionId: String? = nil, session: String?, tier: String?,
+    app: String? = nil, pid: Int? = nil
+  ) async {
     var body: [String: Any] = [:]
+    if let sessionId { body["sessionId"] = sessionId }
     if let session { body["session"] = session }
     if let tier { body["tier"] = tier }
     if let app { body["app"] = app }

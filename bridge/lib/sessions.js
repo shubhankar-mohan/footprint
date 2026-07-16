@@ -28,6 +28,10 @@ export function upsertFromHook(payload) {
   };
 
   if (payload.cwd) existing.cwd = payload.cwd;
+  // Terminal identity (from the hook shim) — lets click-to-reveal focus the right
+  // app/tab. Keep the last non-null values seen for this session.
+  if (payload.tty) existing.tty = payload.tty;
+  if (payload.terminalApp) existing.terminalApp = payload.terminalApp;
   // A discovered (best-effort) session that's now firing hooks is really Attached.
   if (existing.tier === "best-effort") existing.tier = "attached";
 
@@ -129,6 +133,10 @@ export function registerOwned(id, { cwd, tmux }) {
 
 export function all() {
   return [...sessions.values()];
+}
+
+export function get(id) {
+  return sessions.get(id) || null;
 }
 
 // Aggregate glyph priority: needs > working > paused > idle.

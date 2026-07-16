@@ -30,6 +30,39 @@ export async function ttyForPid(pid) {
   }
 }
 
+// Map a ps `comm` (executable path) to a known terminal app name.
+export function matchTerminalComm(comm) {
+  const c = comm || "";
+  if (/Warp\.app/i.test(c)) return "Warp";
+  if (/iTerm/i.test(c)) return "iTerm";
+  if (/Terminal\.app/i.test(c)) return "Terminal";
+  if (/WezTerm|wezterm/i.test(c)) return "WezTerm";
+  if (/Alacritty/i.test(c)) return "Alacritty";
+  if (/kitty/i.test(c)) return "kitty";
+  if (/Hyper/i.test(c)) return "Hyper";
+  if (/Ghostty/i.test(c)) return "Ghostty";
+  if (/Tabby/i.test(c)) return "Tabby";
+  return null;
+}
+
+// Fallback: walk a live pid's ancestry to identify the owning terminal app.
+export async function terminalAppForPid(pid) {
+  let cur = pid;
+  for (let i = 0; i < 12 && cur > 1; i++) {
+    try {
+      const { stdout } = await pexec("ps", ["-o", "ppid=,comm=", "-p", String(cur)]);
+      const m = stdout.trim().match(/^(\d+)\s+(.*)$/);
+      if (!m) break;
+      const app = matchTerminalComm(m[2]);
+      if (app) return app;
+      cur = Number.parseInt(m[1], 10);
+    } catch {
+      break;
+    }
+  }
+  return null;
+}
+
 // Owned: open a new Terminal/iTerm window attached to the tmux session.
 export async function revealOwned({ session, app = "Terminal" }) {
   const attach = `tmux attach -t ${session}`;
@@ -76,7 +109,29 @@ export async function revealITermByTty(tty) {
   return { revealed: result === "focused", method: "iterm-tty", reliable: result === "focused" };
 }
 
-// Warp / Terminal.app: best-effort — just bring the app forward.
+// Terminal.app: focus the existing tab whose tty matches. Terminal exposes both
+// `tty` and `selected` on tabs, so (unlike Warp) we can target the exact tab.
+export async function revealTerminalByTty(tty) {
+  const dev = tty.startsWith("/dev/") ? tty : `/dev/${tty}`;
+  const script = `
+    tell application "Terminal"
+      activate
+      repeat with w in windows
+        repeat with t in tabs of w
+          if tty of t is "${dev}" then
+            set selected of t to true
+            set frontmost of w to true
+            return "focused"
+          end if
+        end repeat
+      end repeat
+      return "not-found"
+    end tell`;
+  const result = await osa(script);
+  return { revealed: result === "focused", method: "terminal-tty", reliable: result === "focused" };
+}
+
+// Warp / anything else: best-effort — just bring the app forward.
 export async function activateApp(appName) {
   await osa(`tell application "${appName}" to activate`);
   return {
@@ -87,15 +142,38 @@ export async function activateApp(appName) {
   };
 }
 
-// Dispatch by tier/app.
-export async function reveal({ tier, session, app, pid }) {
-  if (tier === "owned" && session) return revealOwned({ session, app });
-  if ((app === "iTerm" || app === "iTerm2") && pid) {
-    const tty = await ttyForPid(pid);
-    if (tty) {
-      const r = await revealITermByTty(tty);
-      if (r.revealed) return r;
+// Pure planner: decide HOW to reveal from known fields. No side effects → testable.
+//   owned + session      → attach the tmux session in a new window
+//   iTerm  + tty         → focus the exact iTerm tab
+//   Terminal + tty       → focus the exact Terminal tab
+//   any other known app  → bring it forward (Warp has no tab-select API)
+//   nothing known        → bring Terminal forward
+export function planReveal({ tier, session, app, tty }) {
+  if (tier === "owned" && session) return { method: "tmux-attach", app: app || "Terminal", session };
+  if ((app === "iTerm" || app === "iTerm2") && tty) return { method: "iterm-tty", app: "iTerm", tty };
+  if (app === "Terminal" && tty) return { method: "terminal-tty", app: "Terminal", tty };
+  if (app) return { method: "app-activate", app };
+  return { method: "app-activate", app: "Terminal" };
+}
+
+// Dispatch: enrich from a live pid if needed, then execute the plan.
+export async function reveal({ tier, session, app, tty, pid }) {
+  if (!tty && pid) tty = await ttyForPid(pid);
+  if (!app && pid) app = await terminalAppForPid(pid);
+
+  const plan = planReveal({ tier, session, app, tty });
+  switch (plan.method) {
+    case "tmux-attach":
+      return revealOwned({ session: plan.session, app: plan.app });
+    case "iterm-tty": {
+      const r = await revealITermByTty(plan.tty);
+      return r.revealed ? r : activateApp("iTerm");
     }
+    case "terminal-tty": {
+      const r = await revealTerminalByTty(plan.tty);
+      return r.revealed ? r : activateApp("Terminal");
+    }
+    default:
+      return activateApp(plan.app);
   }
-  return activateApp(app || "Terminal");
 }
