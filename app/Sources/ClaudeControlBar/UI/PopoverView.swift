@@ -38,8 +38,8 @@ struct PopoverView: View {
         Divider()
       }
 
-      // Usage hourglass — hidden below 50% (calm until it matters).
-      if let u = model.snapshot.usage, u.peakPercentage >= 50 {
+      // Usage hourglass — always shown when we have a reading.
+      if let u = model.snapshot.usage {
         HourglassView(usage: u)
         Divider()
       }
