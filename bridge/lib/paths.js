@@ -9,8 +9,10 @@ import fs from "node:fs";
 
 export const HOME = os.homedir();
 
-// Our own state dir (never Claude's).
-export const CCBAR_DIR = path.join(HOME, ".claude-control-bar");
+// Our own state dir (never Claude's). Overridable via CCBAR_DIR so tests (or a
+// second instance) never clobber the running app's port file / backup / map.
+export const CCBAR_DIR =
+  process.env.CCBAR_DIR || path.join(HOME, ".claude-control-bar");
 
 // The bridge writes the live port here on boot so hooks + CLI can find it
 // without hard-coding anything.
