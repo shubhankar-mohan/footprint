@@ -45,8 +45,8 @@ final class AppModel: ObservableObject {
       var flags: [String: Any] = [:]
       if mode == "bypass" { flags["skip"] = true }
       else if mode != "ask" { flags["mode"] = mode }
-      if let name = await client.launch(cwd: cwd, flags: flags) {
-        await client.reveal(session: name, tier: "owned", app: terminal, pid: nil)
+      if let name = await client.launch(cwd: cwd, flags: flags, terminal: terminal) {
+        await client.reveal(sessionId: name, session: name, tier: "owned", app: terminal)
       }
     }
   }

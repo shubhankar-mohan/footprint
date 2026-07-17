@@ -52,12 +52,13 @@ public struct BridgeClient {
   }
 
   // Phase 3: own a session (tmux), send input, reveal its terminal.
-  public func launch(cwd: String, flags: [String: Any]) async -> String? {
+  public func launch(cwd: String, flags: [String: Any], terminal: String) async -> String? {
     guard let base = BridgePaths.baseURL() else { return nil }
     var req = URLRequest(url: base.appendingPathComponent("tmux/launch"))
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    req.httpBody = try? JSONSerialization.data(withJSONObject: ["cwd": cwd, "flags": flags])
+    req.httpBody = try? JSONSerialization.data(
+      withJSONObject: ["cwd": cwd, "flags": flags, "terminal": terminal])
     guard let (data, _) = try? await URLSession.shared.data(for: req),
       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
     return obj["name"] as? String
