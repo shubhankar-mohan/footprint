@@ -70,7 +70,12 @@ function sendPermissionRequest(sessionId, command) {
 
 async function main() {
   const server = spawn("node", [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, CCBAR_PORT: String(PORT), CCBAR_NO_DISCOVER: "1" },
+    env: {
+      ...process.env,
+      CCBAR_PORT: String(PORT),
+      CCBAR_NO_DISCOVER: "1",
+      CCBAR_NO_USAGE_POLL: "1", // don't hit the keychain / network in tests
+    },
     stdio: "inherit",
   });
 
@@ -210,6 +215,14 @@ async function main() {
       Math.round(state.usage.fiveHour.used_percentage) === 42,
       "stale usage reading is rejected (fresh value preserved)"
     );
+
+    // 12. dismiss removes a session from /state
+    await api("/hook", "POST", { session_id: "to-dismiss", hook_event_name: "SessionStart" });
+    state = await api("/state");
+    ok(state.sessions.some((s) => s.id === "to-dismiss"), "session appears before dismiss");
+    await api("/dismiss", "POST", { sessionId: "to-dismiss" });
+    state = await api("/state");
+    ok(!state.sessions.some((s) => s.id === "to-dismiss"), "dismiss removes the session from /state");
 
     console.log(`\nALL ${pass} CHECKS PASSED ✓`);
   } finally {

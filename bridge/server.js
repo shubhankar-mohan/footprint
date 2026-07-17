@@ -21,9 +21,11 @@ import {
   EVENT_LOG,
 } from "./lib/paths.js";
 import * as sessions from "./lib/sessions.js";
+import * as dismissed from "./lib/dismissed.js";
 import * as pending from "./lib/pending.js";
 import * as sessionMap from "./lib/session-map.js";
 import * as usage from "./lib/usage.js";
+import * as usagePoll from "./lib/usage-poll.js";
 import * as autoresume from "./lib/autoresume.js";
 import * as transcript from "./lib/transcript.js";
 import { decisionOutput } from "./lib/hookdecision.js";
@@ -268,6 +270,17 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, 200, { ok: true });
   }
 
+  // --- dismiss: remove an (idle) session from the list -------------------
+  if (req.method === "POST" && pathname === "/dismiss") {
+    const { sessionId } = await readBody(req);
+    if (!sessionId) return sendJSON(res, 400, { error: "need {sessionId}" });
+    dismissed.add(sessionId);
+    sessions.remove(sessionId);
+    log(`dismissed ${sessionId}`);
+    broadcast();
+    return sendJSON(res, 200, { ok: true });
+  }
+
   // --- reveal: jump to a session's terminal ------------------------------
   if (req.method === "POST" && pathname === "/reveal") {
     const { sessionId, session, tier, app, pid } = await readBody(req);
@@ -306,6 +319,21 @@ server.listen(PORT, HOST, () => {
     if (found.length) log(`discovered ${found.length} existing session(s) from transcripts`);
   } catch {
     /* best effort */
+  }
+
+  // Real-time usage: poll the account usage API (authoritative) every 60s.
+  if (!process.env.CCBAR_NO_USAGE_POLL) {
+    usagePoll.start({
+      intervalMs: 60_000,
+      onResult: (r) => {
+        if (r.ok) {
+          log(`usage poll: 5h ${Math.round(r.fiveHour)}% · weekly ${Math.round(r.sevenDay)}%`);
+          broadcast();
+        } else {
+          log(`usage poll: ${r.reason} (falling back to statusline)`);
+        }
+      },
+    });
   }
 });
 
