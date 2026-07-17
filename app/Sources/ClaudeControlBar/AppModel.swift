@@ -63,6 +63,10 @@ final class AppModel: ObservableObject {
     Task { [client] in await client.sendInput(name: name, text: text) }
   }
 
+  func dismissSession(_ s: Session) {
+    Task { [client] in await client.dismiss(sessionId: s.id) }
+  }
+
   func setAutoResume(_ name: String, _ on: Bool) {
     Task { [client] in await client.setAutoResume(name: name, on: on) }
   }

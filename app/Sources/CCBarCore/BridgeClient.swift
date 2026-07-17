@@ -75,6 +75,10 @@ public struct BridgeClient {
     await post("autoresume", ["global": on])
   }
 
+  public func dismiss(sessionId: String) async {
+    await post("dismiss", ["sessionId": sessionId])
+  }
+
   public func reveal(
     sessionId: String? = nil, session: String?, tier: String?,
     app: String? = nil, pid: Int? = nil
