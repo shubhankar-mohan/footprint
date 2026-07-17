@@ -16,8 +16,8 @@ struct PermissionPromptView: View {
       if let ctx = pending.context, !ctx.isEmpty {
         Text(ctx).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(3)
       }
-      if let cmd = pending.command {
-        Text(cmd)
+      if let detail = pending.detail {
+        Text(detail)
           .font(.system(size: 11, design: .monospaced))
           .lineLimit(3).textSelection(.enabled)
           .padding(6)

@@ -39,6 +39,15 @@ public struct Pending: Codable, Identifiable, Equatable, Sendable {
     if case let .string(s)? = input?["command"] { return s }
     return nil
   }
+
+  /// A human-readable detail of what's being approved, across tools:
+  /// Bash → command, Write/Edit → file path, WebFetch → url, etc.
+  public var detail: String? {
+    for key in ["command", "file_path", "path", "url", "pattern", "notebook_path"] {
+      if case let .string(s)? = input?[key], !s.isEmpty { return s }
+    }
+    return nil
+  }
 }
 
 public struct SessionMapEntry: Codable, Equatable, Sendable {
