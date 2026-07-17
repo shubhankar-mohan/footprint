@@ -94,8 +94,36 @@ export async function revealOwnedWarp({ session, cwd }) {
   return { revealed: true, method: "warp-launch", reliable: true };
 }
 
-// Owned: open a new window attached to the tmux session, in the chosen terminal.
+// The tty of the first client already attached to a tmux session (e.g.
+// "/dev/ttys011"), or null if nobody's attached.
+export async function firstClientTty(session) {
+  try {
+    const { stdout } = await pexec("tmux", ["list-clients", "-t", session, "-F", "#{client_tty}"]);
+    return stdout.split("\n").map((s) => s.trim()).filter(Boolean)[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+// Owned: RETURN to the window already showing this session rather than opening a
+// duplicate. iTerm/Terminal → focus the exact tab by the client's tty; Warp →
+// bring it forward (no tab API). Only open a fresh attached window if nothing is
+// attached (e.g. the user closed it).
 export async function revealOwned({ session, app = "Terminal", cwd }) {
+  const clientTty = await firstClientTty(session);
+  if (clientTty) {
+    if (app === "iTerm" || app === "iTerm2") {
+      const r = await revealITermByTty(clientTty);
+      if (r.revealed) return r;
+    } else if (app === "Terminal") {
+      const r = await revealTerminalByTty(clientTty);
+      if (r.revealed) return r;
+    }
+    // Warp (or focus miss): can't target the tab — just bring the app forward.
+    return activateApp(app === "Warp" ? "Warp" : app || "Terminal");
+  }
+
+  // Nothing attached → open a fresh window attached to the session.
   if (app === "Warp") return revealOwnedWarp({ session, cwd });
   const attach = `tmux attach -t ${session}`;
   if (app === "iTerm" || app === "iTerm2") {
