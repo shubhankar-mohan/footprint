@@ -138,6 +138,10 @@ async function main() {
     timeout_ms: TIMEOUT_MS,
     tty,
     terminalApp,
+    // Set by the app when it launches an Owned session in tmux — links this
+    // claude session to its tmux target + terminal for reveal/quick-input.
+    ownedTmux: process.env.CCBAR_OWNED_TMUX || undefined,
+    ownedTerminal: process.env.CCBAR_TERMINAL || undefined,
   });
 
   const controller = new AbortController();

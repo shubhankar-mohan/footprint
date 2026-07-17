@@ -20,3 +20,30 @@ test("hook-reported tty + terminalApp are stored and readable via get()", () => 
   assert.equal(s.tty, "ttys007");
   assert.equal(s.terminalApp, "Warp");
 });
+
+test("ownedTmux env links a claude session as the single Owned row", () => {
+  sessions.upsertFromHook({
+    session_id: "o1",
+    hook_event_name: "SessionStart",
+    ownedTmux: "cc-o1",
+    ownedTerminal: "Warp",
+  });
+  const s = sessions.get("o1");
+  assert.equal(s.tier, "owned");
+  assert.equal(s.tmux, "cc-o1");
+  assert.equal(s.terminalApp, "Warp");
+});
+
+test("SessionEnd (real close) removes the session from the list", () => {
+  sessions.upsertFromHook({ session_id: "e1", hook_event_name: "SessionStart" });
+  assert.ok(sessions.get("e1"));
+  const r = sessions.upsertFromHook({ session_id: "e1", hook_event_name: "SessionEnd", reason: "exit" });
+  assert.equal(r, null);
+  assert.equal(sessions.get("e1"), null);
+});
+
+test("SessionEnd with reason=clear keeps the session (it's still alive)", () => {
+  sessions.upsertFromHook({ session_id: "c1", hook_event_name: "SessionStart" });
+  sessions.upsertFromHook({ session_id: "c1", hook_event_name: "SessionEnd", reason: "clear" });
+  assert.ok(sessions.get("c1"));
+});

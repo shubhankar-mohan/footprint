@@ -219,14 +219,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && pathname === "/tmux/launch") {
     const { cwd, name, flags, terminal } = await readBody(req);
     try {
-      const info = await tmux.launch({ cwd, name, flags });
-      sessions.registerOwned(info.name, { cwd, tmux: info.name, terminalApp: terminal });
-      sessionMap.set(info.name, {
-        cwd,
-        tmux: info.name,
-        project: (cwd || "").split("/").filter(Boolean).pop() || null,
-      });
-      broadcast();
+      // No placeholder row: the session appears (as Owned) when claude's own
+      // hooks fire, linked via the tmux env vars — one row, not two.
+      const info = await tmux.launch({ cwd, name, flags, terminal });
       return sendJSON(res, 200, info);
     } catch (e) {
       return sendJSON(res, 500, { error: String(e.message || e) });
@@ -283,7 +278,7 @@ const server = http.createServer(async (req, res) => {
 
   // --- reveal: jump to a session's terminal ------------------------------
   if (req.method === "POST" && pathname === "/reveal") {
-    const { sessionId, session, tier, app, pid } = await readBody(req);
+    const { sessionId, session, tier, app, pid, cwd } = await readBody(req);
     // The bridge is authoritative for a session's terminal identity: look up the
     // stored tier / tmux target / tty / terminalApp captured from its hooks.
     const s = sessionId ? sessions.get(sessionId) : null;
@@ -294,7 +289,7 @@ const server = http.createServer(async (req, res) => {
         app: app || s?.terminalApp,
         tty: s?.tty,
         pid: pid || s?.pid,
-        cwd: s?.cwd,
+        cwd: cwd || s?.cwd,
       });
       appendEventLog({ dir: "reveal", sessionId, app: app || s?.terminalApp, tty: s?.tty, result: r });
       log(`reveal ${sessionId || session || "?"} → ${r.method} (${r.reliable ? "reliable" : "best-effort"})`);

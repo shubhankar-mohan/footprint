@@ -41,11 +41,16 @@ export async function hasTmux() {
 }
 
 // Create a detached, named tmux session running claude in <cwd>.
-export async function launch({ cwd, name, flags }) {
+// We stamp CCBAR_OWNED_TMUX / CCBAR_TERMINAL into the session env so claude's own
+// hooks report the ownership — that way claude's session_id becomes the single
+// Owned row (no separate placeholder), revealable in the right terminal.
+export async function launch({ cwd, name, flags, terminal }) {
   const session = name || `cc-${shortId()}`;
   const cmd = claudeCommand(flags);
   const args = ["new", "-d", "-s", session];
   if (cwd) args.push("-c", cwd);
+  args.push("-e", `CCBAR_OWNED_TMUX=${session}`);
+  if (terminal) args.push("-e", `CCBAR_TERMINAL=${terminal}`);
   args.push(cmd);
   await pexec("tmux", args);
   return {

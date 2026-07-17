@@ -18,6 +18,15 @@ function now() {
 
 export function upsertFromHook(payload) {
   const id = payload.session_id || payload.sessionId || "unknown";
+  const event = payload.hook_event_name || payload.event || "";
+
+  // A real session close removes it from the list so it doesn't grow forever.
+  // `/clear` fires SessionEnd too but keeps the session alive, so keep that one.
+  if (event === "SessionEnd" && payload.reason !== "clear") {
+    sessions.delete(id);
+    return null;
+  }
+
   // A dismissed session that's firing hooks again is active — bring it back.
   dismissed.remove(id);
   const existing = sessions.get(id) || {
@@ -38,8 +47,14 @@ export function upsertFromHook(payload) {
   if (payload.terminalApp) existing.terminalApp = payload.terminalApp;
   // A discovered (best-effort) session that's now firing hooks is really Attached.
   if (existing.tier === "best-effort") existing.tier = "attached";
+  // App-launched in tmux: this claude session IS the Owned session — link it to
+  // its tmux target + terminal so reveal/quick-input/auto-resume work on this row.
+  if (payload.ownedTmux) {
+    existing.tier = "owned";
+    existing.tmux = payload.ownedTmux;
+    if (payload.ownedTerminal) existing.terminalApp = payload.ownedTerminal;
+  }
 
-  const event = payload.hook_event_name || payload.event || "";
   switch (event) {
     case "SessionStart":
       existing.state = "idle";
@@ -65,7 +80,8 @@ export function upsertFromHook(payload) {
       existing.state = "needs";
       break;
     case "SessionEnd":
-      existing.state = "ended";
+      // Only reaches here for reason === "clear" (real closes removed above).
+      existing.state = "idle";
       break;
     default:
       break;
