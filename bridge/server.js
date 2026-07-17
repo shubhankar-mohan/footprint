@@ -217,10 +217,10 @@ const server = http.createServer(async (req, res) => {
 
   // --- tmux: launch an Owned session -------------------------------------
   if (req.method === "POST" && pathname === "/tmux/launch") {
-    const { cwd, name, flags } = await readBody(req);
+    const { cwd, name, flags, terminal } = await readBody(req);
     try {
       const info = await tmux.launch({ cwd, name, flags });
-      sessions.registerOwned(info.name, { cwd, tmux: info.name });
+      sessions.registerOwned(info.name, { cwd, tmux: info.name, terminalApp: terminal });
       sessionMap.set(info.name, {
         cwd,
         tmux: info.name,
@@ -294,6 +294,7 @@ const server = http.createServer(async (req, res) => {
         app: app || s?.terminalApp,
         tty: s?.tty,
         pid: pid || s?.pid,
+        cwd: s?.cwd,
       });
       appendEventLog({ dir: "reveal", sessionId, app: app || s?.terminalApp, tty: s?.tty, result: r });
       log(`reveal ${sessionId || session || "?"} → ${r.method} (${r.reliable ? "reliable" : "best-effort"})`);

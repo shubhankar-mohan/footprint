@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { planReveal, matchTerminalComm } from "../scripts/reveal.mjs";
+import { planReveal, matchTerminalComm, warpLaunchConfig } from "../scripts/reveal.mjs";
 
 test("owned sessions attach via tmux regardless of app", () => {
   const p = planReveal({ tier: "owned", session: "cc-abc", app: "Warp" });
@@ -35,6 +35,13 @@ test("iTerm without a tty can't target a tab → activate the app", () => {
   const p = planReveal({ tier: "attached", app: "iTerm" });
   assert.equal(p.method, "app-activate");
   assert.equal(p.app, "iTerm");
+});
+
+test("warpLaunchConfig embeds the tmux attach command and cwd (safely quoted)", () => {
+  const y = warpLaunchConfig({ name: "ccbar-cc-1", cwd: "/tmp/my proj", session: "cc-1" });
+  assert.match(y, /name: ccbar-cc-1/);
+  assert.match(y, /exec: "tmux attach -t cc-1"/);
+  assert.match(y, /cwd: "\/tmp\/my proj"/); // quoted → survives the space
 });
 
 test("matchTerminalComm identifies terminals from ps comm paths", () => {

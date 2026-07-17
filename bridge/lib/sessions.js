@@ -119,7 +119,7 @@ export function markNeeds(id, on = true) {
   }
 }
 
-export function registerOwned(id, { cwd, tmux }) {
+export function registerOwned(id, { cwd, tmux, terminalApp }) {
   const s = sessions.get(id) || {
     id,
     state: "idle",
@@ -130,6 +130,7 @@ export function registerOwned(id, { cwd, tmux }) {
   s.tier = "owned";
   s.tmux = tmux;
   if (cwd) s.cwd = cwd;
+  if (terminalApp) s.terminalApp = terminalApp; // where to re-open on reveal
   s.updatedAt = now();
   sessions.set(id, s);
   return s;

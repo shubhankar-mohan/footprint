@@ -11,6 +11,9 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const pexec = promisify(execFile);
 
@@ -63,8 +66,37 @@ export async function terminalAppForPid(pid) {
   return null;
 }
 
-// Owned: open a new Terminal/iTerm window attached to the tmux session.
-export async function revealOwned({ session, app = "Terminal" }) {
+// A Warp launch configuration (YAML) that opens a window running `tmux attach`.
+// Warp can't be told to focus an existing tab, but it CAN launch a new window
+// from a saved config — verified on-device. JSON.stringify gives safe quoting.
+export function warpLaunchConfig({ name, cwd, session }) {
+  return [
+    "---",
+    `name: ${name}`,
+    "windows:",
+    "  - tabs:",
+    "      - layout:",
+    `          cwd: ${JSON.stringify(cwd || os.homedir())}`,
+    "          commands:",
+    `            - exec: ${JSON.stringify(`tmux attach -t ${session}`)}`,
+    "",
+  ].join("\n");
+}
+
+// Owned + Warp: write a launch config and open it (warp://launch/<name>). This is
+// the only way to run a command in Warp — it opens a new window attached to tmux.
+export async function revealOwnedWarp({ session, cwd }) {
+  const name = `ccbar-${String(session).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const dir = path.join(os.homedir(), ".warp", "launch_configurations");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${name}.yaml`), warpLaunchConfig({ name, cwd, session }));
+  await pexec("open", [`warp://launch/${name}`]);
+  return { revealed: true, method: "warp-launch", reliable: true };
+}
+
+// Owned: open a new window attached to the tmux session, in the chosen terminal.
+export async function revealOwned({ session, app = "Terminal", cwd }) {
+  if (app === "Warp") return revealOwnedWarp({ session, cwd });
   const attach = `tmux attach -t ${session}`;
   if (app === "iTerm" || app === "iTerm2") {
     await osa(
@@ -157,14 +189,14 @@ export function planReveal({ tier, session, app, tty }) {
 }
 
 // Dispatch: enrich from a live pid if needed, then execute the plan.
-export async function reveal({ tier, session, app, tty, pid }) {
+export async function reveal({ tier, session, app, tty, pid, cwd }) {
   if (!tty && pid) tty = await ttyForPid(pid);
   if (!app && pid) app = await terminalAppForPid(pid);
 
   const plan = planReveal({ tier, session, app, tty });
   switch (plan.method) {
     case "tmux-attach":
-      return revealOwned({ session: plan.session, app: plan.app });
+      return revealOwned({ session: plan.session, app: plan.app, cwd });
     case "iterm-tty": {
       const r = await revealITermByTty(plan.tty);
       return r.revealed ? r : activateApp("iTerm");
