@@ -186,15 +186,29 @@ async function main() {
     );
 
     // 10. usage ingest (statusline rate_limits) surfaces in /state
+    const soon = Math.floor(Date.now() / 1000) + 3600; // 1h out = fresh
     await api("/usage", "POST", {
       session_id: "sess-1",
-      fiveHour: { used_percentage: 42, resets_at: 1738425600 },
-      sevenDay: { used_percentage: 10, resets_at: 1738857600 },
+      fiveHour: { used_percentage: 42, resets_at: soon },
+      sevenDay: { used_percentage: 10, resets_at: soon },
     });
     state = await api("/state");
     ok(
       state.usage && Math.round(state.usage.fiveHour.used_percentage) === 42,
       "usage ingest surfaces fiveHour in /state"
+    );
+
+    // 11. a STALE reading (reset already in the past) must NOT clobber the fresh
+    //     one — this is what stops the flicker across many sessions.
+    await api("/usage", "POST", {
+      session_id: "idle-old",
+      fiveHour: { used_percentage: 99, resets_at: 1738425600 }, // Feb 2025 = stale
+      sevenDay: { used_percentage: 99, resets_at: 1738425600 },
+    });
+    state = await api("/state");
+    ok(
+      Math.round(state.usage.fiveHour.used_percentage) === 42,
+      "stale usage reading is rejected (fresh value preserved)"
     );
 
     console.log(`\nALL ${pass} CHECKS PASSED ✓`);
