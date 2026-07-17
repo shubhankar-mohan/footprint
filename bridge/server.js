@@ -282,6 +282,8 @@ const server = http.createServer(async (req, res) => {
         tty: s?.tty,
         pid: pid || s?.pid,
       });
+      appendEventLog({ dir: "reveal", sessionId, app: app || s?.terminalApp, tty: s?.tty, result: r });
+      log(`reveal ${sessionId || session || "?"} → ${r.method} (${r.reliable ? "reliable" : "best-effort"})`);
       return sendJSON(res, 200, r);
     } catch (e) {
       return sendJSON(res, 500, { error: String(e.message || e) });

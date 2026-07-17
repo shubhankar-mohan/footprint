@@ -6,6 +6,16 @@ struct SessionRowView: View {
   var onReveal: () -> Void = {}
   @State private var hovering = false
   var body: some View {
+    // A Button (not onTapGesture) is the reliable hit target inside a
+    // MenuBarExtra window — taps on plain views there can be swallowed.
+    Button(action: onReveal) { rowContent }
+      .buttonStyle(.plain)
+      .onHover { hovering = $0 }
+      .help(session.terminalApp.map { "Click to open this session in \($0)" }
+        ?? "Click to open this session's terminal")
+  }
+
+  private var rowContent: some View {
     HStack(spacing: 8) {
       Rectangle().fill(Theme.color(session.state)).frame(width: 3, height: 28)
       Image(systemName: Theme.symbol(session.state)).foregroundStyle(Theme.color(session.state))
@@ -37,10 +47,6 @@ struct SessionRowView: View {
     .padding(.horizontal, 12).frame(height: 44)
     .background(hovering ? Theme.rowHover : Color.clear)
     .contentShape(Rectangle())
-    .onHover { hovering = $0 }
-    .onTapGesture { onReveal() }
-    .help(session.terminalApp.map { "Click to open this session in \($0)" }
-      ?? "Click to open this session's terminal")
   }
 
   private func tierLabel(_ t: Tier) -> String {
