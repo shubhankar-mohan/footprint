@@ -46,7 +46,9 @@ final class AppModel: ObservableObject {
       if mode == "bypass" { flags["skip"] = true }
       else if mode != "ask" { flags["mode"] = mode }
       if let name = await client.launch(cwd: cwd, flags: flags, terminal: terminal) {
-        await client.reveal(sessionId: name, session: name, tier: "owned", app: terminal)
+        // No placeholder session yet — pass cwd so the first Warp reveal opens in
+        // the project dir. Later clicks resolve everything from the owned row.
+        await client.reveal(sessionId: name, session: name, tier: "owned", app: terminal, cwd: cwd)
       }
     }
   }

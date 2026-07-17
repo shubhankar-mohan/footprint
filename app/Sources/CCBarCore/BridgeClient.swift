@@ -82,7 +82,7 @@ public struct BridgeClient {
 
   public func reveal(
     sessionId: String? = nil, session: String?, tier: String?,
-    app: String? = nil, pid: Int? = nil
+    app: String? = nil, pid: Int? = nil, cwd: String? = nil
   ) async {
     var body: [String: Any] = [:]
     if let sessionId { body["sessionId"] = sessionId }
@@ -90,6 +90,7 @@ public struct BridgeClient {
     if let tier { body["tier"] = tier }
     if let app { body["app"] = app }
     if let pid { body["pid"] = pid }
+    if let cwd { body["cwd"] = cwd }
     await post("reveal", body)
   }
 
