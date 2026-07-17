@@ -24,6 +24,10 @@ export const EVENT_LOG = path.join(CCBAR_DIR, "events.log");
 // Persisted session_id ↔ {tmux, cwd, project} map (survives bridge restarts).
 export const SESSION_MAP = path.join(CCBAR_DIR, "session-map.json");
 
+// Session ids the user dismissed from the list (survives bridge restarts so a
+// dismissed session isn't re-surfaced by transcript discovery).
+export const DISMISSED = path.join(CCBAR_DIR, "dismissed.json");
+
 // Claude Code's global settings + our backup of it.
 export const CLAUDE_DIR = path.join(HOME, ".claude");
 export const CLAUDE_SETTINGS = path.join(CLAUDE_DIR, "settings.json");

@@ -8,6 +8,8 @@
 //   paused  – usage limit hit (detected separately)
 //   ended   – SessionEnd seen
 
+import * as dismissed from "./dismissed.js";
+
 const sessions = new Map(); // session_id -> session object
 
 function now() {
@@ -16,6 +18,8 @@ function now() {
 
 export function upsertFromHook(payload) {
   const id = payload.session_id || payload.sessionId || "unknown";
+  // A dismissed session that's firing hooks again is active — bring it back.
+  dismissed.remove(id);
   const existing = sessions.get(id) || {
     id,
     cwd: null,
@@ -93,7 +97,7 @@ export function setName(id, name) {
 // Register a session discovered from the transcript dir (best-effort tier).
 // Never overrides a session we already track live via hooks.
 export function registerDiscovered({ id, cwd, lastLine, updatedAt }) {
-  if (!id || sessions.has(id)) return;
+  if (!id || sessions.has(id) || dismissed.has(id)) return;
   sessions.set(id, {
     id,
     cwd: cwd || null,
@@ -137,6 +141,11 @@ export function all() {
 
 export function get(id) {
   return sessions.get(id) || null;
+}
+
+// Remove a session from the live model (the user dismissed it).
+export function remove(id) {
+  return sessions.delete(id);
 }
 
 // Aggregate glyph priority: needs > working > paused > idle.
