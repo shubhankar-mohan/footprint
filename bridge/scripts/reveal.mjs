@@ -90,6 +90,14 @@ export async function revealOwnedWarp({ session, cwd }) {
   const dir = path.join(os.homedir(), ".warp", "launch_configurations");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${name}.yaml`), warpLaunchConfig({ name, cwd, session }));
+  // Warp must already be running: `open warp://…` cannot cold-launch it and fails
+  // with kLSExecutableIncorrectFormat. Launch/activate first, then fire the URL.
+  try {
+    await pexec("open", ["-a", "Warp"]);
+    await new Promise((r) => setTimeout(r, 1200));
+  } catch {
+    /* Warp not installed — the URL below will surface the error */
+  }
   await pexec("open", [`warp://launch/${name}`]);
   return { revealed: true, method: "warp-launch", reliable: true };
 }

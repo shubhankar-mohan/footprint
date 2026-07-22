@@ -322,6 +322,7 @@ server.listen(PORT, HOST, () => {
     usagePoll.start({
       intervalMs: 60_000,
       onResult: (r) => {
+        appendEventLog({ dir: "usage-poll", result: r });
         if (r.ok) {
           log(`usage poll: 5h ${Math.round(r.fiveHour)}% · weekly ${Math.round(r.sevenDay)}%`);
           broadcast();
