@@ -84,6 +84,34 @@ export async function capturePane(session) {
   }
 }
 
+// Owned tmux sessions still running from a previous bridge run. We stamped
+// CCBAR_OWNED_TMUX/CCBAR_TERMINAL into their env at launch, so we can re-adopt
+// them on boot — otherwise an idle Owned session vanishes from the list until it
+// next fires a hook.
+export async function listOwned() {
+  const out = [];
+  for (const name of await listSessions()) {
+    try {
+      const { stdout: env } = await pexec("tmux", ["show-environment", "-t", name]);
+      if (!/^CCBAR_OWNED_TMUX=/m.test(env)) continue;
+      const terminal = (env.match(/^CCBAR_TERMINAL=(.*)$/m) || [])[1] || null;
+      let cwd = null;
+      try {
+        const { stdout } = await pexec("tmux", [
+          "display-message", "-p", "-t", name, "#{pane_current_path}",
+        ]);
+        cwd = stdout.trim() || null;
+      } catch {
+        /* pane gone */
+      }
+      out.push({ name, terminal, cwd });
+    } catch {
+      /* session vanished mid-scan */
+    }
+  }
+  return out;
+}
+
 export async function listSessions() {
   try {
     const { stdout } = await pexec("tmux", ["list-sessions", "-F", "#{session_name}"]);

@@ -53,6 +53,9 @@ export function upsertFromHook(payload) {
     existing.tier = "owned";
     existing.tmux = payload.ownedTmux;
     if (payload.ownedTerminal) existing.terminalApp = payload.ownedTerminal;
+    // Supersede the boot-time placeholder keyed by the tmux name: the real
+    // claude session is the canonical row, so there's never a duplicate.
+    if (payload.ownedTmux !== id) sessions.delete(payload.ownedTmux);
   }
 
   switch (event) {

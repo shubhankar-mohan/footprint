@@ -317,6 +317,24 @@ server.listen(PORT, HOST, () => {
     /* best effort */
   }
 
+  // Re-adopt owned tmux sessions still alive from a previous bridge run.
+  // An idle owned session fires no hooks, so nothing else would re-register it.
+  (async () => {
+    try {
+      if (process.env.CCBAR_NO_DISCOVER) return;
+      const owned = await tmux.listOwned();
+      for (const o of owned) {
+        sessions.registerOwned(o.name, { cwd: o.cwd, tmux: o.name, terminalApp: o.terminal });
+      }
+      if (owned.length) {
+        log(`re-adopted ${owned.length} owned tmux session(s)`);
+        broadcast();
+      }
+    } catch {
+      /* best effort */
+    }
+  })();
+
   // Real-time usage: poll the account usage API (authoritative) every 60s.
   if (!process.env.CCBAR_NO_USAGE_POLL) {
     usagePoll.start({
