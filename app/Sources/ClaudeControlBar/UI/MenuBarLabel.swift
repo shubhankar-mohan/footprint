@@ -20,7 +20,7 @@ struct MenuBarLabel: View {
       if let u = model.snapshot.usage {
         Text("\(Int(u.peakPercentage.rounded()))%")
           .font(.system(size: 11, weight: .medium))
-          .foregroundStyle(u.peakPercentage >= 80 ? Color.red : Color.primary)
+          .foregroundStyle(u.peakPercentage >= 80 ? Theme.critical : Color.primary)
       }
     }
   }

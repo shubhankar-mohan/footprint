@@ -6,11 +6,13 @@ import AppKit
 struct StartSessionView: View {
   @ObservedObject var model: AppModel
   @Binding var show: Bool
-  @State private var cwd = ""
-  @State private var mode = "ask"
+  // Remembered across opens so you don't re-pick the same dir/mode/terminal each
+  // time. Persisted in UserDefaults; the values below are only first-run defaults.
+  @AppStorage("cc.start.cwd") private var cwd = ""
+  @AppStorage("cc.start.mode") private var mode = "ask"
   // All three run `tmux attach`: Warp via a launch config, Terminal/iTerm via
   // AppleScript. Warp is the default since that's the common setup here.
-  @State private var terminal = "Warp"
+  @AppStorage("cc.start.terminal") private var terminal = "Warp"
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {

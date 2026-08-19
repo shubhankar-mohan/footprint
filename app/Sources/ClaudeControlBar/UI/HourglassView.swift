@@ -16,21 +16,21 @@ struct HourglassView: View {
   @ViewBuilder private func bar(_ label: String, _ w: UsageWindow) -> some View {
     let pct = min(1, max(0, (w.usedPercentage ?? 0) / 100))
     HStack(spacing: 6) {
-      Image(systemName: "hourglass").font(.system(size: 10)).foregroundStyle(.secondary)
-      Text(label).font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 42, alignment: .leading)
+      Image(systemName: "hourglass").font(.system(size: 11)).foregroundStyle(.secondary)
+      Text(label).font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
       GeometryReader { geo in
         ZStack(alignment: .leading) {
           Capsule().fill(Color.secondary.opacity(0.15))
-          Capsule().fill(pct >= 0.8 ? Color.red : Theme.color(.working))
+          Capsule().fill(pct >= 0.8 ? Theme.critical : Theme.working)
             .frame(width: max(2, geo.size.width * pct))
         }
       }
       .frame(height: 6)
       Text("\(Int((w.usedPercentage ?? 0).rounded()))%")
-        .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
-        .frame(width: 30, alignment: .trailing)
+        .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+        .frame(width: 32, alignment: .trailing)
       if let r = w.resetsAt {
-        Text(resetIn(r)).font(.system(size: 9)).foregroundStyle(.tertiary).frame(width: 34, alignment: .trailing)
+        Text(resetIn(r)).font(.system(size: 11)).foregroundStyle(.tertiary).frame(width: 32, alignment: .trailing)
       }
     }
   }

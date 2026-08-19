@@ -6,6 +6,7 @@ struct PopoverView: View {
   let onDecide: (String, String) -> Void
   @State private var showSettings = false
   @State private var showStart = false
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     if showSettings {
@@ -19,61 +20,107 @@ struct PopoverView: View {
 
   private var main: some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack {
-        Text("Claude Control Bar").font(.system(size: 12, weight: .semibold))
-        Spacer()
-        Circle().fill(model.connected ? Color.green : Color.secondary).frame(width: 6, height: 6)
-        Button { showStart = true } label: { Image(systemName: "plus") }
-          .buttonStyle(.plain).foregroundStyle(.secondary).help("Start a session")
-        Button { showSettings = true } label: { Image(systemName: "gearshape") }
-          .buttonStyle(.plain).foregroundStyle(.secondary).help("Monitoring settings")
-      }
-      .padding(.horizontal, 12).padding(.vertical, 8)
+      header
       Divider()
 
-      if !model.snapshot.pending.isEmpty {
-        ForEach(model.snapshot.pending) { p in
-          PermissionPromptView(pending: p, onDecide: onDecide)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+          needsSection
+          group("Working", .working, workingRows)
+          group("Idle", .idle, idleRows)
+          if isEmpty { emptyState }
         }
-        Divider()
       }
+      .frame(maxHeight: listMaxHeight)
 
-      // Usage hourglass — always shown when we have a reading.
       if let u = model.snapshot.usage {
-        HourglassView(usage: u)
         Divider()
-      }
-
-      if model.snapshot.sessions.isEmpty {
-        emptyState
-      } else {
-        ForEach(sorted(model.snapshot.sessions)) { s in
-          SessionRowView(
-            session: s,
-            onReveal: { model.revealSession(s) },
-            onDismiss: { model.dismissSession(s) }
-          )
-          // Input only when an Owned session is actually waiting on you.
-          if s.state == .needs, s.tier == .owned, let name = s.tmux {
-            OwnedInputBar(name: name, lastLine: s.lastLine, onSend: { model.sendInput($0, $1) })
-          }
-        }
+        HourglassView(usage: u)
       }
 
       Divider()
-      HStack {
-        Text("Mischief managed").font(.system(size: 10)).foregroundStyle(.tertiary)
-        Spacer()
-        Button("New session") { showStart = true }
-          .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.color(.working))
-        Text("·").foregroundStyle(.tertiary)
-        Button("Quit") { NSApplication.shared.terminate(nil) }
-          .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
-      }
-      .padding(.horizontal, 12).padding(.vertical, 6)
+      footer
     }
     .frame(width: 320)
-    .background(Theme.popoverBG)
+    .background(surface)
+  }
+
+  // Warm-blue ground with a soft top light (subtle in dark).
+  private var surface: some View {
+    Theme.popoverBG.overlay(
+      RadialGradient(
+        colors: [Color.white.opacity(colorScheme == .dark ? 0.10 : 0.45), .clear],
+        center: .top, startRadius: 0, endRadius: 260
+      )
+    )
+  }
+
+  private var header: some View {
+    HStack {
+      Text("Footprint - Claude Control Bar").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+      Spacer()
+      Circle().fill(model.connected ? Color.green : Color.secondary).frame(width: 6, height: 6)
+      Button { showStart = true } label: { Image(systemName: "plus") }
+        .buttonStyle(.plain).foregroundStyle(.secondary).help("Start a session")
+      Button { showSettings = true } label: { Image(systemName: "gearshape") }
+        .buttonStyle(.plain).foregroundStyle(.secondary).help("Monitoring settings")
+    }
+    .padding(.horizontal, 13).padding(.vertical, 9)
+  }
+
+  // "Needs you" gathers pending permission prompts and any needs-state rows —
+  // the one section that should draw the eye, pinned to the top.
+  @ViewBuilder private var needsSection: some View {
+    let pending = model.snapshot.pending
+    let rows = needsRows
+    if !pending.isEmpty || !rows.isEmpty {
+      sectionHeader("Needs you", Theme.color(.needs), pending.count + rows.count)
+      ForEach(pending) { p in
+        PermissionPromptView(pending: p, onDecide: onDecide)
+      }
+      ForEach(rows) { s in sessionRow(s) }
+    }
+  }
+
+  @ViewBuilder private func group(_ title: String, _ state: SessionState, _ rows: [Session]) -> some View {
+    if !rows.isEmpty {
+      sectionHeader(title, Theme.color(state), rows.count)
+      ForEach(rows) { s in sessionRow(s) }
+    }
+  }
+
+  @ViewBuilder private func sessionRow(_ s: Session) -> some View {
+    SessionRowView(
+      session: s,
+      onReveal: { model.revealSession(s) },
+      onDismiss: { model.dismissSession(s) }
+    )
+    // Inline reply only when an Owned session is actually waiting on you.
+    if s.state == .needs, s.tier == .owned, let name = s.tmux {
+      OwnedInputBar(name: name, lastLine: s.lastLine, onSend: { model.sendInput($0, $1) })
+    }
+  }
+
+  // Serif italic label — a quiet nod to the map/document motif — plus a count.
+  private func sectionHeader(_ title: String, _ color: Color, _ count: Int) -> some View {
+    HStack(spacing: 7) {
+      Text(title)
+        .font(.system(size: 12, weight: .semibold, design: .serif)).italic()
+        .foregroundStyle(color)
+      Text("\(count)").font(.system(size: 11)).foregroundStyle(.tertiary)
+      Spacer()
+    }
+    .padding(.horizontal, 13).padding(.top, 12).padding(.bottom, 5)
+  }
+
+  private var footer: some View {
+    HStack {
+      Text(summary).font(.system(size: 11)).foregroundStyle(.tertiary)
+      Spacer()
+      Button("Quit") { NSApplication.shared.terminate(nil) }
+        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
+    }
+    .padding(.horizontal, 13).padding(.vertical, 8)
   }
 
   @ViewBuilder private var emptyState: some View {
@@ -89,16 +136,33 @@ struct PopoverView: View {
           .font(.system(size: 12, weight: .semibold)).buttonStyle(.borderedProminent)
       }
     }
-    .frame(maxWidth: .infinity).padding(.vertical, 24)
+    .frame(maxWidth: .infinity).padding(.vertical, 28)
   }
 
-  // needs > working > paused > idle, then stable by project name.
-  private func sorted(_ sessions: [Session]) -> [Session] {
-    sessions.sorted { a, b in
-      rank(a.state) != rank(b.state) ? rank(a.state) < rank(b.state) : a.project < b.project
-    }
+  // Let the list breathe — up to ~2.5× the old 400pt cap, bounded by the screen
+  // so a long session list never runs off the top or bottom.
+  private var listMaxHeight: CGFloat {
+    let screen = NSScreen.main?.visibleFrame.height ?? 900
+    return min(1000, screen * 0.72)
   }
-  private func rank(_ s: SessionState) -> Int {
-    switch s { case .needs: 0; case .working: 1; case .paused: 2; case .idle: 3; case .ended: 4 }
+
+  // MARK: - Grouping
+
+  private var needsRows: [Session] { byProject(model.snapshot.sessions.filter { $0.state == .needs }) }
+  private var workingRows: [Session] { byProject(model.snapshot.sessions.filter { $0.state == .working }) }
+  private var idleRows: [Session] {
+    byProject(model.snapshot.sessions.filter { $0.state == .idle || $0.state == .paused || $0.state == .ended })
+  }
+  private var isEmpty: Bool { model.snapshot.sessions.isEmpty && model.snapshot.pending.isEmpty }
+
+  private func byProject(_ s: [Session]) -> [Session] { s.sorted { $0.project < $1.project } }
+
+  private var summary: String {
+    var parts: [String] = []
+    let n = needsRows.count + model.snapshot.pending.count
+    if n > 0 { parts.append("\(n) needs you") }
+    if !workingRows.isEmpty { parts.append("\(workingRows.count) working") }
+    if !idleRows.isEmpty { parts.append("\(idleRows.count) idle") }
+    return parts.isEmpty ? "No sessions" : parts.joined(separator: " · ")
   }
 }
