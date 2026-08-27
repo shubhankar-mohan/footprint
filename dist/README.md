@@ -1,6 +1,6 @@
 # Distribution — free, no Apple Developer account
 
-Claude Control Bar ships **unsigned** from our **own Homebrew tap**. The only
+Footprint ships **unsigned** from our **own Homebrew tap**. The only
 things behind Apple's $99/yr wall are Developer-ID signing and notarization, and
 neither is required: the cask's `postflight` strips the `com.apple.quarantine`
 attribute, so Gatekeeper opens the unsigned app without the "unidentified
@@ -11,7 +11,7 @@ it requires notarization — but a personal tap has no such rule.)
 
 1. Create a public GitHub repo named **`homebrew-tap`** under your account
    (e.g. `github.com/shubhankar/homebrew-tap`).
-2. Copy `dist/Casks/claude-control-bar.rb` into `Casks/` in that repo.
+2. Copy `dist/Casks/footprint.rb` into `Casks/` in that repo.
 
 ## Each release
 
@@ -22,7 +22,7 @@ bash dist/build-release.sh 0.1.0
 # 2. Create a GitHub release on the app repo and upload the zip:
 gh release create v0.1.0 dist/ClaudeControlBar-0.1.0.zip --title "v0.1.0" --notes "..."
 
-# 3. Update Casks/claude-control-bar.rb in the tap:
+# 3. Copy Casks/footprint.rb into the tap (build-release.sh already wrote the sha256):
 #    - version "0.1.0"
 #    - sha256 "<the sha256 build-release.sh printed>"
 #    - confirm the url matches your GitHub user/repo
@@ -35,7 +35,7 @@ different.
 ## Users install with
 
 ```bash
-brew install shubhankar/tap/claude-control-bar
+brew install shubhankar-mohan/tap/footprint
 ```
 
 This launches with **no Gatekeeper prompt** (quarantine stripped in postflight),
