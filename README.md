@@ -1,4 +1,4 @@
-<h1 align="center">Claude Control Bar</h1>
+<h1 align="center">Footprint</h1>
 
 <p align="center">
   <em>A calm macOS menu-bar control panel for every local Claude Code session —<br>
@@ -8,7 +8,7 @@
 <p align="center">
   <img alt="platform: macOS" src="https://img.shields.io/badge/platform-macOS-black">
   <img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="status: Phase 1 (in progress)" src="https://img.shields.io/badge/status-Phase%201%20·%20in%20progress-e8a935">
+  <img alt="status: pre-release" src="https://img.shields.io/badge/status-v0.1.0%20·%20pre--release-e8a935">
   <img alt="price: free & open-source" src="https://img.shields.io/badge/free%20%26%20open--source-yes-4a90e2">
 </p>
 
@@ -16,7 +16,7 @@
 
 ## What it is
 
-Claude Control Bar is a **control panel, not a terminal replacement.** You still live in
+Footprint is a **control panel, not a terminal replacement.** You still live in
 your terminal to read the full conversation and write real prompts. The bar's job is
 deliberately narrow — and it does it from the menu bar, without stealing focus:
 
@@ -26,8 +26,8 @@ deliberately narrow — and it does it from the menu bar, without stealing focus
   hacks. It answers Claude Code's official permission hooks.
 - **Jump to the right terminal in one click** — the panel routes; it never crams a
   transcript into a popover.
-- **Auto-resume** a session that paused on a usage limit *(Phase 4)*.
-- **Start new sessions** in your terminal of choice *(Phase 3)*.
+- **Auto-resume** a session that paused on a usage limit.
+- **Start new sessions** in your terminal of choice.
 
 It's **free and open-source**, native Swift/SwiftUI, with a tiny local bridge that speaks
 Claude Code's hook protocol.
@@ -69,7 +69,7 @@ prompts, but there's no channel to type into it.
 ## How it works
 
 ```
-Claude Code sessions             Claude Control Bar.app (SwiftUI · MenuBarExtra)
+Claude Code sessions             Footprint.app (SwiftUI · MenuBarExtra)
  ┌──────────────────┐  hooks      ┌───────────────────────────────┐
  │ Owned  (tmux)    │ ─(HTTP)───▶ │  footprint glyph · session list │
  │ Attached (any)   │            │  approve / deny · notifications │
@@ -104,27 +104,30 @@ color-blind safety.
 
 | Phase | What | Status |
 |---|---|---|
-| **0** | Spike: prove the hook write-back loop + tmux ownership | ✅ built & tested (`bridge/`, 9/9 smoke checks) |
+| **0** | Spike: prove the hook write-back loop + tmux ownership | ✅ built & tested (`bridge/`, 70 unit + 19 smoke) |
 | **1** | Monitor **+** live Approve/Deny: full hook set, session list, aggregate glyph, notifications | 🚧 in progress |
 | **2** | *(folded into Phase 1 — live approve/deny)* | — |
-| **3** | Start a session + reveal terminal + quick input | ⏳ |
-| **4** | Auto-resume + usage hourglass | ⏳ |
-| **5** | Onboarding, settings, launch-at-login, distribution polish | ⏳ |
+| **3** | Start a session + reveal terminal + quick input | ✅ shipped |
+| **4** | Auto-resume + usage hourglass | ✅ shipped |
+| **5** | Onboarding, launch-at-login, **distribution** | 🚧 in progress — the current focus |
+| **6** | `/mark` + MCP `get_slice`: quote any past turn back into a live session | ⏳ next |
+| **7** | The Atlas: browse, search, and graph every session | ⏳ |
 
 The current Phase 1 design lives in
 [`docs/superpowers/specs/2026-07-11-phase1-monitor-approve-design.md`](docs/superpowers/specs/2026-07-11-phase1-monitor-approve-design.md).
 
 ## Getting started (developers)
 
-**Requirements:** macOS · Node ≥ 18 · a working `claude` CLI · `tmux` (for the Owned tier) ·
-Xcode (for the app, Phase 1+).
+**Requirements:** macOS 14+ · Node ≥ 18 · a working `claude` CLI · `tmux` (for the Owned tier).
+**No Xcode needed** — the app builds with the Swift toolchain in Command Line Tools.
 
-The Phase 0 bridge runs today, dependency-free (no `npm install`):
+The bridge is dependency-free (no `npm install`):
 
 ```bash
 cd bridge
-npm test          # 9/9 end-to-end checks — no Claude Code needed
+npm test          # 70 unit + 19 end-to-end checks — no Claude Code needed
 npm start         # run the local bridge (writes its port to ~/.claude-control-bar/port)
+npm run install-hooks -- --dry   # preview the exact settings.json diff, write nothing
 
 # in another terminal, install the hooks (backs up ~/.claude/settings.json first):
 npm run install-hooks -- --dry   # preview the exact diff
@@ -141,14 +144,28 @@ See [`bridge/README.md`](bridge/README.md) for the full spike walkthrough and en
 
 ## Installation (end users)
 
-Planned for Phase 5, and it will stay **free** — no Apple Developer account required:
+Free, and no Apple Developer account required:
 
 ```bash
-brew install shubhankar/tap/claude-control-bar   # own tap, launches with no Gatekeeper prompt
+brew install shubhankar-mohan/tap/footprint
 ```
 
-A notarized build in the official Homebrew tap is a possible later nicety, not a
-prerequisite. A DMG on GitHub Releases will always be available too.
+Footprint has **no Dock icon** — it lives in the menu bar. The install launches it once so
+you can find it. Open it and choose **Turn on monitoring**; it shows you exactly what
+changes before writing anything:
+
+1. Hooks are merged into `~/.claude/settings.json` — backed up first, removable from the
+   same screen or by uninstalling.
+2. macOS asks once for Keychain access so the usage bars can read your Claude usage.
+   Nothing leaves your machine.
+3. **Hooks load when a session starts** — start a new Claude Code session afterwards.
+   Ones already running stay invisible until restarted.
+
+`brew uninstall footprint` removes the hooks for you before deleting the app.
+
+This build is unsigned and not notarized. Homebrew verifies its checksum and then clears
+the macOS quarantine flag so it will open — a deliberate tradeoff for a free tool, stated
+plainly rather than hidden.
 
 ## Repository layout
 
@@ -161,8 +178,11 @@ docs/                     plan, design brief, rendered designs, specs
 bridge/                   the local bridge (Node, dependency-free)
   server.js               HTTP on 127.0.0.1, holds permission requests open
   hooks/cc-hook.mjs       the single hook shim (fails open if the bridge is down)
+  lib/eventlog.js         redacted, size-capped, rotating event log
+  lib/transcript.js       bounded head/tail JSONL reads (never whole-file)
   lib/ · scripts/ · test/ session model, hook install, tmux, reveal, smoke test
-app/                      the SwiftUI menu-bar app (added in Phase 1)
+app/                      the SwiftUI menu-bar app
+VERSION                   single source of the version (Info.plist, zip, cask)
 ```
 
 ## Contributing

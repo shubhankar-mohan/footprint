@@ -1,8 +1,9 @@
 # Footprint — Master Handoff & Context
 
 **Purpose:** everything a fresh Claude Code session needs to continue this work with zero prior context. Read this first, then `docs/footprint-product-plan.md`.
-**Status:** Bar shipped (harbor revamp done) · Unified product concept locked · Atlas/Engine not yet built.
-**Repo:** `~/Documents/Shubhankar/footprints` · **Branch:** `phase1-monitor-approve` · **Updated:** 22 Aug 2026
+**Status:** Bar built + review fixes applied · roadmap resequenced (ship first) · Atlas/Engine not yet built.
+**Reviews:** eng + product + design run 24-26 Aug 2026 — 9 decisions (D1-D10) folded into `footprint-product-plan.md` §9.
+**Repo:** `~/Documents/Shubhankar/footprints` · **Branch:** `phase1-monitor-approve` · **Updated:** 26 Aug 2026
 
 > **How to use this doc in a new session:** `Read docs/HANDOFF.md and docs/footprint-product-plan.md, then summarize the plan back to me and propose the first concrete step.`
 
@@ -12,9 +13,9 @@
 
 **Footprint** is a free, local-first macOS tool for developers running Claude Code (and other AI coding agents). It has grown from one surface into a three-part product:
 
-- **The Bar** — macOS menu-bar popover. Monitor live sessions, approve permission prompts, reveal/start sessions, usage. **Built and shipping.** (SwiftUI, SPM, no Xcode.)
+- **The Bar** — macOS menu-bar popover. Monitor live sessions, approve permission prompts, reveal/start sessions, usage. **Built; release pending.** (SwiftUI, SPM, no Xcode.)
 - **The Atlas** — localhost web app. Browse + full-text search all sessions across agents, per-session conversation **graph**, node inspector → full-read modal, markers, and **quote / rewind / fork** any node back into chat. **Designed, not built.** (Vite + React.)
-- **The Engine** — the local daemon behind both (the existing Node bridge, extended): transcript parser, SQLite + FTS index, live watch, slice serializer, fork service (Agent SDK), MCP server.
+- **The Engine** — the local daemon behind both (the existing Node bridge, extended): transcript parser (worker thread), index, live watch, slice serializer, fork service (Agent SDK), MCP server. Dependency-free JS — the TypeScript rule was dropped (D1).
 
 The Atlas solves the core pain: an analysis Claude gave 5 follow-ups ago is buried in scrollback. Footprint makes every turn a findable, readable, referenceable node — *`git log --graph` for conversations.*
 
@@ -59,11 +60,11 @@ footprints/
         UI/                    # Theme, PopoverView, SessionRowView, HourglassView,
                                # MenuBarLabel, PermissionPromptView, StartSessionView,
                                # SettingsView, OwnedInputBar
-  bridge/                      # Node/TS daemon (dependency-free ESM) = the future "Engine"
+  bridge/                      # Node daemon (dependency-free ESM) = the future "Engine"
     server.js                  # HTTP + SSE on 127.0.0.1:<random>, port -> ~/.claude-control-bar/port
     cli.mjs
     lib/                       # sessions, usage, usage-poll, dismissed, pending, transcript,
-                               # hookdecision, autoresume, session-map, paths
+                               # eventlog, hookdecision, autoresume, session-map, paths
     scripts/                   # tmux.mjs, reveal.mjs, install-hooks.mjs, uninstall-hooks.mjs
     hooks/                     # cc-hook.mjs (the Claude Code hook shim), cc-statusline.mjs
     test/                      # node --test suites + smoke.mjs
@@ -73,7 +74,8 @@ footprints/
     design-brief.md            # original Bar design brief
     plan.md                    # original Bar phase plan
     final-designs.html
-  dist/                        # release packaging (build-release.sh, Casks, zip)
+  dist/                        # release packaging (build-release.sh, Casks/footprint.rb, zip)
+  VERSION                      # single source of the version (Info.plist, zip, cask)
   README.md, CONTRIBUTING.md, LICENSE
 ```
 
@@ -91,17 +93,17 @@ footprints/
 
 ### Architecture (how the Bar talks to the bridge)
 ```
-Claude Code hooks ──POST──> bridge/server.js (127.0.0.1:<port>) ──SSE──> ClaudeControlBar.app
+Claude Code hooks ──POST──> bridge/server.js (127.0.0.1:<port>) ──SSE──> Footprint.app
   (cc-hook.mjs)             in-memory session model + usage poll        SwiftUI MenuBarExtra
                             port written to ~/.claude-control-bar/port
 ```
-- **Key detail:** the app spawns and supervises the bridge (`BridgeSupervisor`); the *running* bridge is the copy bundled inside `ClaudeControlBar.app/Contents/Resources/bridge/`, NOT the repo `bridge/`. So after editing `bridge/*`, you must re-run `make-app.sh` and relaunch.
+- **Key detail:** the app spawns and supervises the bridge (`BridgeSupervisor`); the *running* bridge is the copy bundled inside `Footprint.app/Contents/Resources/bridge/`, NOT the repo `bridge/`. So after editing `bridge/*`, you must re-run `make-app.sh` and relaunch.
 - Tests isolate state via `CCBAR_DIR` env override so `npm test` never clobbers the real port file.
 
 ### The harbor revamp (shipped, `5e74a88`)
 Design language now:
 - **Palette (tokens):** ground `#D3DFE7` light / `#181F26` dark · working `#43617F`/`#7FA8CC` · needs `#9A4F12`/`#E2A04E` · idle `#87A0AC`/`#7F8F9C` · critical `#C0503A`/`#E07A5F`.
-- Grouped sections with **serif-italic headers** + counts; top-lit surface; usage below the list; list height cap ~2.5× (bounded 72% of screen); footer shows a live summary; title "Footprint - Claude Control Bar".
+- Grouped sections with **serif-italic headers** + counts; top-lit surface; usage below the list; list height cap ~2.5× (bounded 72% of screen); footer shows a live summary; title "Footprint".
 - Rows: **one status signal** (footprint glyph + word), Owned shows a small terminal glyph (tier in tooltip), needs-you rows get a soft warm tint, gentle working pulse (reduce-motion aware).
 - Type floor 11px.
 
@@ -180,13 +182,13 @@ The definitive visuals. Open these to see the design; they're the spec:
 ### ASCII — the Bar popover (harbor)
 ```
 ┌────────────────────────────────────────────┐
-│ Footprint - Claude Control Bar     ● + ⚙   │
+│ Footprint                          ● + ⚙   │
 ├────────────────────────────────────────────┤
 │ Needs you · 1                    (serif it.) │
 │▎🐾 footprints        Waiting on you · Bash  now│  ← amber tint + left bar
 │ Working · 2                                  │
 │ 🐾 webapp            Working · Edit          now│
-│ 🐾 KC ⌐             Working · tests         now│  ← ⌐ = Owned glyph
+│ 🐾 db ⌐             Working · tests         now│  ← ⌐ = Owned glyph
 │ Idle · 1                                     │
 │ 🐾 notes            Idle                    12m│
 ├────────────────────────────────────────────┤
@@ -225,7 +227,7 @@ The definitive visuals. Open these to see the design; they're the spec:
 │ Scope                      │ 🐾 DB lock contention [CC]  ●─●─⚑─●⑂  ⚑1 ⑂1 │
 │  🐾 All projects   193     │    …skip locked for the scan…      now 84k │
 │  ⚑ With markers    23      │ 🐾 reveal + bridge re-adopt [CC] ●─●─●─● 2h │
-│  ⑂ With forks      9       │ 🐾 KC                    2 sessions        │
+│  ⑂ With forks      9       │ 🐾 db                    2 sessions        │
 │  ● Active now      3       │ 🐾 migration cost cmp [CC]  ●─⚑─●─● ⚑2 3h  │
 │ Agents                     │ 🐾 webapp batching [Cx]     ●─●─●⑂ ⑂1  1h  │
 │  [CC]142 [Cx]31 [Ge]12     │ 🐾 notes                1 session         │
@@ -241,13 +243,16 @@ The definitive visuals. Open these to see the design; they're the spec:
 
 ## 7. Roadmap
 
-| Phase | Deliverable | Ships |
+| Phase | Deliverable | Status |
 |---|---|---|
-| **0 — Spike** | Parse one real JSONL → ASCII tree; read AgentsView (MIT) first; answer 4 schema Qs (rewind behavior, sidechains, compaction `summary`, per-version variance). | ½ day, de-risks everything |
-| **1 — Engine + read-only** | Extend the bridge into the Engine (index + FTS + watch). Atlas browser + search + graph + inspector/modal + `/mark`. Bar gains "Open in Atlas". | the core fix |
-| **2 — References** | Slice export + MCP `get_slice`; paste `node://…` into chat. | quote works |
-| **3 — Forks** | Fork-from-node via Agent SDK; multi-branch graph. | fork works |
-| **4 — Polish** | Analytics, annotations, branch-vs-branch diff, subagent sub-graphs, project forest view. | if still in love |
+| **0 — Ship the Bar** | Repo · tag · tap · real sha256 · rename to Footprint · working uninstall · 2 live P1 fixes | 🚧 code done, release pending |
+| **1 — References** | `/mark` + MCP `get_slice` on the existing bridge. Needs no Atlas. | ⏳ next |
+| **2 — Spike + Engine** | JSONL→tree spike (4 schema Qs), worker-thread parser, byte-offset tailing, index | ⏳ |
+| **3 — Atlas** | Browser + search + graph + inspector/modal; Bar gains "Open in Atlas" | ⏳ |
+| **4 — Forks** | Fork-from-node via Agent SDK; multi-branch graph | ⏳ |
+| **5 — Polish** | Analytics, annotations, diff, subagent sub-graphs, forest view | ⏳ |
+
+**Why this order (D6):** the original plan built four Atlas phases on top of a Bar with zero distribution — no git remote, a placeholder cask checksum, a 404 URL. And the differentiator (quote a past turn back into a live session) turns out to be an MCP server, not a web app.
 
 **Bar backlog (separate from the Atlas work):** README is stale (says Xcode required, "9/9 smoke"); auto-resume end-to-end unverified (needs a real limit hit); Phase 5 — onboarding, launch-at-login, Homebrew tap.
 
@@ -259,17 +264,17 @@ The definitive visuals. Open these to see the design; they're the spec:
 
 ```bash
 # --- Bridge (Engine) ---
-cd bridge && npm test                       # 40 unit + 19 smoke, state-isolated via CCBAR_DIR
+cd bridge && npm test                       # 78 unit + 19 smoke, state-isolated via CCBAR_DIR
 
 # --- App (Bar) ---
 cd app && swift build -c release             # compile (Command Line Tools only; no Xcode/XCTest)
-cd app && ./scripts/make-app.sh release      # build + assemble ClaudeControlBar.app (bundles bridge in)
+cd app && ./scripts/make-app.sh release      # build + assemble Footprint.app (version from ./VERSION)
 
 # Relaunch after a change (bridge changes need the bundle rebuilt because the
 # RUNNING bridge is the copy inside the .app, not repo/bridge):
-osascript -e 'tell application "ClaudeControlBar" to quit' 2>/dev/null
-pkill -f "ClaudeControlBar.app/Contents/MacOS/ClaudeControlBar"; pkill -f "Resources/bridge/server.js"
-open app/ClaudeControlBar.app
+osascript -e 'tell application "Footprint" to quit' 2>/dev/null
+pkill -f "Footprint.app/Contents/MacOS/Footprint"; pkill -f "Resources/bridge/server.js"
+open app/Footprint.app
 
 # Inspect live state:
 PORT=$(cat ~/.claude-control-bar/port); curl -s "http://127.0.0.1:$PORT/state" | python3 -m json.tool

@@ -1,4 +1,4 @@
-# Contributing to Claude Control Bar
+# Contributing to Footprint
 
 Thanks for your interest! This is a free, open-source macOS utility built on Claude Code's
 official hooks. Contributions — bug reports, ideas, docs, and code — are all welcome.

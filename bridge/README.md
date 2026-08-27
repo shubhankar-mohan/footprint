@@ -1,4 +1,4 @@
-# Claude Control Bar — Phase 0 bridge spike
+# Footprint — the local bridge
 
 This is the **Phase 0** spike from the plan (§9): a tiny, dependency-free Node
 bridge that proves the two mechanics everything else rests on —

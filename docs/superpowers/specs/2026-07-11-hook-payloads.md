@@ -22,8 +22,8 @@ authoritative contract for the bridge + app data models.*
 ```json
 {
   "session_id": "11111111-2222-3333-4444-555555555555",
-  "transcript_path": "/Users/.../projects/-Users-...-footprints/11111111-...jsonl",
-  "cwd": "/Users/you/Documents/Shubhankar/footprints/bridge",
+  "transcript_path": "/Users/.../projects/-Users-...-footprints/11111111-....jsonl",
+  "cwd": "/Users/you/dev/footprints/bridge",
   "prompt_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
   "permission_mode": "bypassPermissions",
   "effort": { "level": "high" },
