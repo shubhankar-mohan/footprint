@@ -5,6 +5,11 @@
 import fs from "node:fs";
 import { DISMISSED, ensureDir } from "./paths.js";
 
+// Claude Code garbage-collects transcripts after ~30 days, so an id older than
+// the newest few hundred can never be re-surfaced by discovery anyway. Cap the
+// list rather than growing it for the life of the install.
+export const MAX_IDS = 1000;
+
 let ids = load();
 
 function load() {
@@ -26,7 +31,10 @@ function save() {
 
 export function add(id) {
   if (!id) return;
+  if (ids.has(id)) return; // already dismissed — don't rewrite the file
   ids.add(id);
+  // A Set iterates in insertion order, so the oldest ids are dropped first.
+  while (ids.size > MAX_IDS) ids.delete(ids.values().next().value);
   save();
 }
 

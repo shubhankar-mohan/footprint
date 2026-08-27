@@ -13,6 +13,22 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
 
 // Park a held request. `respond(decision)` is called exactly once, either by a
 // user decision or by the timeout. Returns the pending id.
+// Identity of one tool call. Computed ONCE at hold time: tool inputs reach
+// 600 KB (a Write payload carries the whole file), and the old findByCall
+// re-serialized every pending on every gate event — on the latency-critical
+// permission path.
+function callKey(sessionId, tool, input) {
+  let body;
+  try {
+    body = JSON.stringify(input ?? null);
+  } catch {
+    body = String(input);
+  }
+  // A JSON array, not concatenation: the parts stay unambiguously delimited
+  // even if a session id or tool name ever contains the separator.
+  return JSON.stringify([sessionId ?? null, tool ?? null, body]);
+}
+
 export function hold({ sessionId, cwd, tool, input, channel, context, respond, timeoutMs }) {
   const id = randomUUID();
   const ms = Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS;
@@ -28,6 +44,7 @@ export function hold({ sessionId, cwd, tool, input, channel, context, respond, t
     cwd,
     tool,
     input,
+    key: callKey(sessionId, tool, input),
     channel: channel || "preToolUse",
     context: context || null,
     respond,
@@ -40,15 +57,8 @@ export function hold({ sessionId, cwd, tool, input, channel, context, respond, t
 // Find an existing pending for the same tool call (session + tool + input),
 // used to dedupe when both PreToolUse and PermissionRequest fire for one call.
 export function findByCall(sessionId, tool, input) {
-  const key = JSON.stringify(input || null);
-  return (
-    [...pending.values()].find(
-      (p) =>
-        p.sessionId === sessionId &&
-        p.tool === tool &&
-        JSON.stringify(p.input || null) === key
-    ) || null
-  );
+  const key = callKey(sessionId, tool, input);
+  return [...pending.values()].find((p) => p.key === key) || null;
 }
 
 // Resolve a held request with a decision: "allow" | "deny" | "ask".
@@ -66,8 +76,10 @@ export function resolve(id, decision, reason = "", updatedInput = null) {
   return true;
 }
 
+// `key` is an internal dedupe index that embeds the serialized input — stripping
+// it keeps /state from carrying the tool input twice.
 export function list() {
-  return [...pending.values()].map(({ res, respond, timer, ...rest }) => rest);
+  return [...pending.values()].map(({ res, respond, timer, key, ...rest }) => rest);
 }
 
 export function findBySession(sessionId) {

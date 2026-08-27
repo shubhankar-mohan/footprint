@@ -33,7 +33,11 @@ export function list() {
 
 export function setGlobal(on) {
   globalOn = !!on;
-  if (!globalOn) for (const n of [...timers.keys()]) cancel(n);
+  // Turning the global switch off must not cancel a resume for a session the
+  // user opted into individually — that session is still enabled.
+  if (!globalOn) {
+    for (const n of [...timers.keys()]) if (!enabled.has(n)) cancel(n);
+  }
 }
 
 export function globalEnabled() {

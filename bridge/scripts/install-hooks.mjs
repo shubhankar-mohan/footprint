@@ -22,8 +22,32 @@ import {
 } from "../lib/paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HOOK_CMD = `node "${path.resolve(__dirname, "../hooks/cc-hook.mjs")}"`;
-const STATUSLINE_CMD = `node "${path.resolve(__dirname, "../hooks/cc-statusline.mjs")}"`;
+
+// Absolute path to node, not a bare `node`. A GUI-launched app inherits a
+// different PATH than your login shell (no /opt/homebrew/bin), so a bare `node`
+// resolves fine when you test in a terminal and silently fails for everyone who
+// installs the app.
+//
+// Prefer the same STABLE locations the app uses to launch the bridge
+// (BridgeLocation.nodePath in Swift), and fall back to whatever is running this
+// script only if none exist. process.execPath alone is wrong: under nvm it is a
+// version-pinned path like ~/.nvm/versions/node/v18.20.5/bin/node, which rots
+// the moment you switch or prune that version — worse than a bare `node`.
+const NODE_CANDIDATES = [
+  "/opt/homebrew/bin/node",
+  "/usr/local/bin/node",
+  "/usr/bin/node",
+];
+const NODE =
+  NODE_CANDIDATES.find((p) => {
+    try {
+      return fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  }) || process.execPath;
+const HOOK_CMD = `"${NODE}" "${path.resolve(__dirname, "../hooks/cc-hook.mjs")}"`;
+const STATUSLINE_CMD = `"${NODE}" "${path.resolve(__dirname, "../hooks/cc-statusline.mjs")}"`;
 const DRY = process.argv.includes("--dry");
 
 // Timeouts are in SECONDS. The gate timeout must exceed the bridge's hold
@@ -74,9 +98,13 @@ function merge(settings) {
     const kept = arr.filter((e) => !isOurs(e));
     out.hooks[event] = [...kept, ...structuredClone(entries)];
   }
-  // Usage hourglass: set our statusLine ONLY if the user has none — never clobber
-  // a status line they already configured.
-  if (!out.statusLine) {
+  // Usage hourglass. Never clobber a status line the user configured themselves,
+  // but DO refresh one that is already ours — otherwise an entry written by an
+  // older version (bare `node`, or a stale path) is preserved forever precisely
+  // because it exists.
+  const existing = out.statusLine?.command || "";
+  const statusLineIsOurs = existing.includes("cc-statusline.mjs");
+  if (!out.statusLine || statusLineIsOurs) {
     out.statusLine = { type: "command", command: STATUSLINE_CMD, refreshInterval: 5 };
   }
   return out;

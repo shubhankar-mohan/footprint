@@ -32,3 +32,18 @@ test("remove() deletes a session from the live model", () => {
   sessions.remove("del");
   assert.equal(sessions.get("del"), null);
 });
+
+test("the dismissed list is capped and evicts oldest-first", () => {
+  dismissed._reset();
+  for (let i = 0; i < dismissed.MAX_IDS + 25; i++) dismissed.add(`d-${i}`);
+  assert.ok(dismissed.all().length <= dismissed.MAX_IDS, "list must stay bounded");
+  assert.equal(dismissed.has("d-0"), false, "oldest dismissed id is evicted");
+  assert.equal(dismissed.has(`d-${dismissed.MAX_IDS + 24}`), true, "newest survives");
+});
+
+test("re-adding an already-dismissed id is a no-op", () => {
+  dismissed._reset();
+  dismissed.add("dupe");
+  dismissed.add("dupe");
+  assert.equal(dismissed.all().filter((x) => x === "dupe").length, 1);
+});

@@ -11,15 +11,14 @@
 // real hook payload shapes for Phase 1.
 
 import http from "node:http";
-import fs from "node:fs";
 import { URL } from "node:url";
 
 import {
-  ensureDir,
   writePort,
   readPort,
   EVENT_LOG,
 } from "./lib/paths.js";
+import * as eventlog from "./lib/eventlog.js";
 import * as sessions from "./lib/sessions.js";
 import * as dismissed from "./lib/dismissed.js";
 import * as pending from "./lib/pending.js";
@@ -42,14 +41,9 @@ function log(...args) {
   console.log(line);
 }
 
-function appendEventLog(obj) {
-  try {
-    ensureDir();
-    fs.appendFileSync(EVENT_LOG, JSON.stringify(obj) + "\n");
-  } catch {
-    /* best effort */
-  }
-}
+// Redacted, size-capped, rotating, and ASYNC — it sits on the permission hot
+// path, so a slow disk must never stall a held tool call. See lib/eventlog.js.
+const appendEventLog = eventlog.append;
 
 function snapshot() {
   return {
@@ -183,7 +177,9 @@ const server = http.createServer(async (req, res) => {
         context,
         timeoutMs: payload.timeout_ms,
         respond: (decision, reason, updatedInput) => {
-          sessions.markNeeds(payload.session_id, false);
+          // "ask" means we fell through to Claude Code's own prompt — the
+          // session is still blocked on the user, so it must STAY in Needs you.
+          sessions.resolveNeeds(payload.session_id, decision);
           appendEventLog({ dir: "decision", id, channel, decision, reason });
           const out = decisionOutput(channel, decision, reason, updatedInput);
           if (out) sendJSON(res, 200, out);
@@ -390,7 +386,10 @@ const arPoll = setInterval(async () => {
 }, 20_000);
 if (typeof arPoll.unref === "function") arPoll.unref();
 
-process.on("SIGINT", () => {
+function shutdown() {
   log("shutting down");
+  sessionMap.flush(); // a coalesced write may still be pending
   server.close(() => process.exit(0));
-});
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

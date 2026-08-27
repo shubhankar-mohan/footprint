@@ -36,3 +36,16 @@ test("cancel stops a scheduled resume", () => {
   ar.cancel("cc-3");
   assert.ok(!ar.isScheduled("cc-3"));
 });
+
+test("turning the global switch off keeps per-session scheduled resumes", () => {
+  ar.setGlobal(true);
+  ar.setEnabled("cc-keep", true);          // individually opted in
+  ar.scheduleResume("cc-keep", Math.floor(Date.now() / 1000) + 3600, { sendFn: () => {} });
+  ar.scheduleResume("cc-global-only", Math.floor(Date.now() / 1000) + 3600, { sendFn: () => {} });
+
+  ar.setGlobal(false);
+
+  assert.equal(ar.isScheduled("cc-keep"), true, "individually enabled session keeps its resume");
+  assert.equal(ar.isScheduled("cc-global-only"), false, "global-only session is cancelled");
+  ar.setEnabled("cc-keep", false);
+});

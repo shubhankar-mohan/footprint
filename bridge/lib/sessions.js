@@ -16,6 +16,27 @@ function now() {
   return Date.now();
 }
 
+// One shape for every session, however it entered the model (hook event,
+// transcript discovery, or tmux re-adoption). Three separate object literals
+// used to drift — `registerOwned` never set `tty`, so a re-adopted Owned
+// session could not be revealed by terminal tab.
+function newSession(id, overrides = {}) {
+  return {
+    id,
+    cwd: null,
+    tier: "attached", // becomes "owned" if we launched it in tmux
+    tmux: null, // tmux session name for owned sessions
+    state: "idle",
+    tool: null,
+    lastLine: null, // optional one-line glance
+    tty: null,
+    terminalApp: null,
+    createdAt: now(),
+    updatedAt: now(),
+    ...overrides,
+  };
+}
+
 export function upsertFromHook(payload) {
   const id = payload.session_id || payload.sessionId || "unknown";
   const event = payload.hook_event_name || payload.event || "";
@@ -29,16 +50,7 @@ export function upsertFromHook(payload) {
 
   // A dismissed session that's firing hooks again is active — bring it back.
   dismissed.remove(id);
-  const existing = sessions.get(id) || {
-    id,
-    cwd: null,
-    tier: "attached", // becomes "owned" if we launched it in tmux
-    tmux: null, // tmux session name for owned sessions
-    state: "idle",
-    tool: null,
-    lastLine: null, // optional one-line glance
-    createdAt: now(),
-  };
+  const existing = sessions.get(id) || newSession(id);
 
   if (payload.cwd) existing.cwd = payload.cwd;
   // Terminal identity (from the hook shim) — lets click-to-reveal focus the right
@@ -117,17 +129,16 @@ export function setName(id, name) {
 // Never overrides a session we already track live via hooks.
 export function registerDiscovered({ id, cwd, lastLine, updatedAt }) {
   if (!id || sessions.has(id) || dismissed.has(id)) return;
-  sessions.set(id, {
+  sessions.set(
     id,
-    cwd: cwd || null,
-    tier: "best-effort",
-    tmux: null,
-    state: "idle",
-    tool: null,
-    lastLine: lastLine || null,
-    createdAt: updatedAt || now(),
-    updatedAt: updatedAt || now(),
-  });
+    newSession(id, {
+      cwd: cwd || null,
+      tier: "best-effort",
+      lastLine: lastLine || null,
+      createdAt: updatedAt || now(),
+      updatedAt: updatedAt || now(),
+    })
+  );
 }
 
 export function markNeeds(id, on = true) {
@@ -138,14 +149,25 @@ export function markNeeds(id, on = true) {
   }
 }
 
+// Clearing "needs" depends on WHAT resolved the permission request:
+//
+//   allow / deny → Claude Code proceeds (runs the tool, or handles the refusal)
+//                  and the session is working again.
+//   ask          → we did NOT decide. The hook fell through to Claude Code's own
+//                  prompt, so the session is STILL blocked on the user.
+//
+// The old code hardcoded "working" for every resolution, which meant a permission
+// that timed out moved the row OUT of "Needs you" at the exact moment it started
+// needing you — the one signal this product exists to show.
+export function resolveNeeds(id, decision) {
+  const s = sessions.get(id);
+  if (!s) return;
+  s.state = decision === "ask" ? "needs" : "working";
+  s.updatedAt = now();
+}
+
 export function registerOwned(id, { cwd, tmux, terminalApp }) {
-  const s = sessions.get(id) || {
-    id,
-    state: "idle",
-    tool: null,
-    lastLine: null,
-    createdAt: now(),
-  };
+  const s = sessions.get(id) || newSession(id);
   s.tier = "owned";
   s.tmux = tmux;
   if (cwd) s.cwd = cwd;
