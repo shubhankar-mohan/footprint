@@ -9,7 +9,7 @@ cask "footprint" do
 
   # The app spawns a small Node bridge at runtime.
   depends_on formula: "node"
-  depends_on macos: ">= :sonoma" # macOS 14+, for the Observation framework
+  depends_on macos: :sonoma # macOS 14+, for the Observation framework
 
   app "Footprint.app"
 
