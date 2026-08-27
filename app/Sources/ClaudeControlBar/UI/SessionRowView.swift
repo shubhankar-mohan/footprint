@@ -48,6 +48,12 @@ struct SessionRowView: View {
       .buttonStyle(.plain)
       .help(session.terminalApp.map { "Click to open this session in \($0)" }
         ?? "Click to open this session's terminal")
+      // Without this the row reads as loose fragments — "pawprint", "footprints",
+      // "Waiting on you" — and state, which is carried by color, is lost entirely.
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(rowDescription)
+      .accessibilityHint(session.terminalApp.map { "Opens this session in \($0)" }
+        ?? "Opens this session's terminal")
 
       // Trailing controls — siblings of the reveal button so their taps are their
       // own (not swallowed by reveal). Shown on hover; otherwise a relative time.
@@ -78,6 +84,19 @@ struct SessionRowView: View {
       guard session.state == .working, !reduceMotion else { return }
       withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulsing = true }
     }
+  }
+
+  // Everything the row conveys visually, spoken in one sentence: name, state,
+  // current tool, whether we own it, and how long since it moved.
+  private var rowDescription: String {
+    var parts = [session.title, Theme.label(session.state)]
+    if let tool = session.tool { parts.append("running \(tool)") }
+    if isOwned { parts.append("owned session, you can reply to it") }
+    if let t = session.updatedAt {
+      let r = relative(t)
+      parts.append(r == "now" ? "updated just now" : "updated \(r) ago")
+    }
+    return parts.joined(separator: ", ")
   }
 
   // needs-you rows carry a soft warm tint (the one state that should pop); the

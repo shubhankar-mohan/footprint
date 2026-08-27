@@ -23,5 +23,16 @@ struct MenuBarLabel: View {
           .foregroundStyle(u.peakPercentage >= 80 ? Theme.critical : Color.primary)
       }
     }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Footprint")
+    .accessibilityValue(summary(agg))
+  }
+
+  private func summary(_ agg: SessionState) -> String {
+    var s = "\(Theme.label(agg))"
+    if let u = model.snapshot.usage {
+      s += ", \(Int(u.peakPercentage.rounded())) percent of your usage limit"
+    }
+    return s
   }
 }

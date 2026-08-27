@@ -33,6 +33,23 @@ struct HourglassView: View {
         Text(resetIn(r)).font(.system(size: 11)).foregroundStyle(.tertiary).frame(width: 32, alignment: .trailing)
       }
     }
+    // A capsule inside a GeometryReader is invisible to VoiceOver — without this
+    // the usage bars, which are half the reason to open the popover, announce
+    // nothing at all.
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("\(label) usage")
+    .accessibilityValue(usageDescription(w))
+  }
+
+  private func usageDescription(_ w: UsageWindow) -> String {
+    let pct = Int((w.usedPercentage ?? 0).rounded())
+    var s = "\(pct) percent used"
+    if pct >= 80 { s += ", in the last fifth of the window" }
+    if let r = w.resetsAt {
+      let t = resetIn(r)
+      s += t == "now" ? ", resetting now" : ", resets in \(t)"
+    }
+    return s
   }
 
   private func resetIn(_ epoch: Double) -> String {

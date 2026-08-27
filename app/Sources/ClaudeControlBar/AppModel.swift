@@ -1,6 +1,17 @@
 import Foundation
 import Combine
+import ServiceManagement
 import CCBarCore
+
+// What happened the last time the user enabled or removed monitoring. Drives the
+// confirmation screen: enabling used to close the panel silently, so a working
+// install and a failed one looked identical — and the one instruction that makes
+// it work ("start a NEW session") was printed to stdout, where no GUI user sees it.
+enum HookOutcome: Equatable {
+  case installed
+  case removed
+  case failed(String)
+}
 
 // ObservableObject (not @Observable) because MenuBarExtra reliably re-renders from
 // @Published via @StateObject/@ObservedObject; a nested @Observable did not update.
@@ -11,6 +22,7 @@ final class AppModel: ObservableObject {
   @Published var snapshot: Snapshot = .empty
   @Published var connected = false
   @Published var hooksInstalled = false
+  @Published var lastHookOutcome: HookOutcome?
 
   private let supervisor = BridgeSupervisor()
   private let client = BridgeClient()
@@ -78,19 +90,61 @@ final class AppModel: ObservableObject {
   }
 
   // Hook install/uninstall run off the main thread (they spawn node + touch disk).
-  func installHooks() { runHook { HookInstaller.install() } }
-  func uninstallHooks() { runHook { HookInstaller.uninstall() } }
+  func installHooks() { runHook(expecting: true) { HookInstaller.install() } }
+  func uninstallHooks() { runHook(expecting: false) { HookInstaller.uninstall() } }
   func previewDiff(_ completion: @escaping (String) -> Void) {
     DispatchQueue.global().async {
       let out = HookInstaller.previewDiff()
       DispatchQueue.main.async { completion(out) }
     }
   }
-  private func runHook(_ work: @escaping () -> String) {
+
+  func clearHookOutcome() { lastHookOutcome = nil }
+
+  // Verify against the file rather than trusting the exit path: the script can
+  // print an error and still exit 0 (e.g. ~/.claude missing entirely).
+  private func runHook(expecting installed: Bool, _ work: @escaping () -> String) {
     DispatchQueue.global().async {
-      _ = work()
-      let installed = HookInstaller.isInstalled()
-      DispatchQueue.main.async { self.hooksInstalled = installed }
+      let output = work()
+      let actual = HookInstaller.isInstalled()
+      DispatchQueue.main.async {
+        self.hooksInstalled = actual
+        self.lastHookOutcome =
+          actual == installed
+          ? (installed ? .installed : .removed)
+          : .failed(Self.firstProblem(in: output))
+      }
     }
+  }
+
+  // The scripts print a human-readable reason on the first line when they bail
+  // (e.g. "~/.claude does not exist. Install & run Claude Code once first").
+  private static func firstProblem(in output: String) -> String {
+    let line = output
+      .split(separator: "\n")
+      .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+      .map(String.init) ?? ""
+    return line.isEmpty ? "The hook script did not complete." : line
+  }
+
+  // MARK: - Launch at login
+
+  var launchAtLogin: Bool {
+    SMAppService.mainApp.status == .enabled
+  }
+
+  func setLaunchAtLogin(_ on: Bool) {
+    do {
+      if on { try SMAppService.mainApp.register() }
+      else { try SMAppService.mainApp.unregister() }
+    } catch {
+      // Non-fatal: the toggle simply reflects the real status on next read.
+    }
+    objectWillChange.send()
+  }
+
+  static var appVersion: String {
+    let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    return v ?? "dev"
   }
 }

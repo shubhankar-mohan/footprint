@@ -57,13 +57,17 @@ struct PopoverView: View {
 
   private var header: some View {
     HStack {
-      Text("Footprint - Claude Control Bar").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+      Text("Footprint").font(.system(size: 12, weight: .semibold)).lineLimit(1)
       Spacer()
-      Circle().fill(model.connected ? Color.green : Color.secondary).frame(width: 6, height: 6)
+      Circle().fill(model.connected ? Theme.color(.working) : Color.secondary)
+        .frame(width: 6, height: 6)
+        .accessibilityLabel(model.connected ? "Connected to the bridge" : "Not connected")
       Button { showStart = true } label: { Image(systemName: "plus") }
         .buttonStyle(.plain).foregroundStyle(.secondary).help("Start a session")
+        .accessibilityLabel("Start a session")
       Button { showSettings = true } label: { Image(systemName: "gearshape") }
         .buttonStyle(.plain).foregroundStyle(.secondary).help("Monitoring settings")
+        .accessibilityLabel("Monitoring settings")
     }
     .padding(.horizontal, 13).padding(.vertical, 9)
   }
@@ -123,14 +127,20 @@ struct PopoverView: View {
     .padding(.horizontal, 13).padding(.vertical, 8)
   }
 
+  // Warmth, context, one primary action. The line is set in the same serif italic
+  // as the section headers beside it — it is the friendliest sentence in the
+  // product and was the only one rendering in plain SF.
   @ViewBuilder private var emptyState: some View {
     VStack(spacing: 8) {
-      Text("The map is quiet.").font(.system(size: 13)).foregroundStyle(.secondary)
+      Text("The map is quiet.")
+        .font(.system(size: 15, design: .serif)).italic()
+        .foregroundStyle(.secondary)
       if !model.hooksInstalled {
         Text("Monitoring is off, so sessions won't appear.")
           .font(.system(size: 11)).foregroundStyle(.tertiary)
-        Button("Enable monitoring") { showSettings = true }
+        Button("Turn on monitoring") { showSettings = true }
           .font(.system(size: 12, weight: .semibold)).buttonStyle(.borderedProminent)
+          .accessibilityHint("Explains what changes on your machine before anything is written")
       } else {
         Button("Start a session") { showStart = true }
           .font(.system(size: 12, weight: .semibold)).buttonStyle(.borderedProminent)
