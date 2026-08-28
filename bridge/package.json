@@ -5,16 +5,20 @@
   "type": "module",
   "description": "Phase 0 spike: local bridge that ingests Claude Code hook events, holds permission requests open, and owns tmux sessions.",
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "ccbar-bridge": "./server.js",
-    "ccbar": "./cli.mjs"
+    "ccbar": "./cli.mjs",
+    "footprint-mcp": "./mcp-server.mjs"
   },
   "scripts": {
     "start": "node server.js",
     "cli": "node cli.mjs",
     "test": "CCBAR_DIR=\"${TMPDIR:-/tmp}/ccbar-test\" node --test test/*.test.mjs && CCBAR_DIR=\"${TMPDIR:-/tmp}/ccbar-test\" node test/smoke.mjs",
     "install-hooks": "node scripts/install-hooks.mjs",
-    "uninstall-hooks": "node scripts/uninstall-hooks.mjs"
+    "uninstall-hooks": "node scripts/uninstall-hooks.mjs",
+    "mcp": "node mcp-server.mjs"
   }
 }

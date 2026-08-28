@@ -28,6 +28,13 @@ export const SESSION_MAP = path.join(CCBAR_DIR, "session-map.json");
 // dismissed session isn't re-surfaced by transcript discovery).
 export const DISMISSED = path.join(CCBAR_DIR, "dismissed.json");
 
+// Named markers on conversation nodes — the sidecar. It lives HERE and not in
+// `./.footprint` inside each project (D4): per-repo state would drop untracked
+// files into every repo you work in, and would lose the CCBAR_DIR isolation the
+// test suite depends on. ~/.claude stays read-only telemetry; this is the only
+// place we write.
+export const MARKS = path.join(CCBAR_DIR, "marks.json");
+
 // Claude Code's global settings + our backup of it.
 export const CLAUDE_DIR = path.join(HOME, ".claude");
 export const CLAUDE_SETTINGS = path.join(CLAUDE_DIR, "settings.json");

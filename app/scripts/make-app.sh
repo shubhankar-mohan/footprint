@@ -25,7 +25,7 @@ cp "$BUILT" "$APP/Contents/MacOS/$EXEC"
 
 # Only the pieces the running app needs. The bridge is dependency-free by design,
 # so there is no node_modules to copy — keep it that way.
-cp -R ../bridge/server.js ../bridge/lib ../bridge/hooks ../bridge/scripts ../bridge/package.json \
+cp -R ../bridge/server.js ../bridge/mcp-server.mjs ../bridge/lib ../bridge/hooks ../bridge/scripts ../bridge/package.json \
   "$APP/Contents/Resources/bridge/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
