@@ -48,3 +48,6 @@ port
 .idea/
 *.swp
 *~
+
+# ─── Throwaway spikes (kept out of the shipped tree) ─────
+bridge/spike/
