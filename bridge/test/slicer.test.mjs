@@ -6,6 +6,7 @@ import path from "node:path";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "ccbar-slicer-"));
 process.env.CCBAR_PROJECTS = path.join(TMP, "projects");
+process.env.CCBAR_DIR = path.join(TMP, "state");
 const PROJ = path.join(TMP, "projects", "-Users-you-dev-demo");
 fs.mkdirSync(PROJ, { recursive: true });
 

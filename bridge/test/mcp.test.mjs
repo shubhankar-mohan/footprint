@@ -6,6 +6,9 @@ import path from "node:path";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "ccbar-mcp-"));
 process.env.CCBAR_PROJECTS = path.join(TMP, "projects");
+// Own state dir: this file writes marks.json and would otherwise race
+// marks.test.mjs, which node --test runs in parallel.
+process.env.CCBAR_DIR = path.join(TMP, "state");
 const PROJ = path.join(TMP, "projects", "-Users-you-dev-demo");
 fs.mkdirSync(PROJ, { recursive: true });
 

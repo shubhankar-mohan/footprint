@@ -1,8 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import fs from "node:fs";
-import * as marks from "../lib/marks.js";
-import { MARKS } from "../lib/paths.js";
+import os from "node:os";
+import path from "node:path";
+
+// node --test runs test FILES in parallel. Every file that writes bridge state
+// needs its OWN CCBAR_DIR, or they race on the same paths — this file and
+// mcp.test.mjs both write marks.json, which made one of them flake ~1 run in 12.
+// Must be set before paths.js is imported, so the imports below are dynamic.
+process.env.CCBAR_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ccbar-marks-"));
+
+const marks = await import("../lib/marks.js");
+const { MARKS } = await import("../lib/paths.js");
 
 function reset() {
   marks._reset();
