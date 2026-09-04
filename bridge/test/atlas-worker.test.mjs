@@ -36,9 +36,11 @@ test("the engine returns the same session list as a direct parse", async () => {
 test("the engine returns a tree with nodes and edges", async () => {
   const t = await engine.getTree("big");
   assert.equal(t.ok, true);
-  // 4001 turns in a single chain: every node but the root has one parent edge.
-  assert.equal(t.nodes.length, 4001);
-  assert.equal(t.edges.length, 4000);
+  // The fixture alternates user/assistant, and the graph shows only the user's
+  // asks — so 4001 turns become 2001 nodes, each linked to the previous ask.
+  assert.equal(t.nodes.length, 2001);
+  assert.equal(t.edges.length, 2000);
+  assert.ok(t.nodes.every((n) => n.role === "user"));
 });
 
 test("the engine searches across sessions", async () => {

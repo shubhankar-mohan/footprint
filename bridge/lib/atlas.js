@@ -121,7 +121,7 @@ const isCompaction = (r) => Boolean(r?.isCompactSummary || r?.compactMetadata);
 // session "<command-name>/clear</command-name>" is useless — seen on the real
 // corpus.
 const COMMAND_ENVELOPE =
-  /^\s*<(command-name|command-message|command-args|local-command-stdout|local-command-stderr|user-prompt-submit-hook)\b/;
+  /^\s*<(command-name|command-message|command-args|local-command-stdout|local-command-stderr|user-prompt-submit-hook|task-notification|task-id|system-reminder|tool-use-error)\b/;
 
 const isCommandEnvelope = (text) => COMMAND_ENVELOPE.test(text || "");
 
@@ -254,42 +254,68 @@ export async function getTree(sessionId) {
   const parsed = parseSession(meta);
   const { tree } = parsed;
 
-  // A turn earns a place in the graph if it said something or did something.
-  // In a real 1907-node session, 50% had neither — drawing them buried the
-  // conversation under a wall of "(no text)".
-  const meaningful = (t) => {
+  // The graph is the USER'S JOURNEY: what they asked, in order, branching where
+  // they rewound. Claude's replies and the tool chatter are the answer to a
+  // node, not nodes themselves — drawing them buried 12 real asks under 979
+  // boxes on a real session.
+  const isAsk = (t) => {
+    if (t.type !== "user") return false;
     const text = extractText(t).trim();
-    if (isCommandEnvelope(text)) return false; // machinery, not a person talking
-    if (isToolResultRecord(t)) return false; // the tool reporting back
-    const tools = (Array.isArray(t.message?.content) ? t.message.content : []).filter(
-      (c) => c?.type === "tool_use"
-    );
-    return Boolean(text) || tools.length > 0;
+    return Boolean(text) && !isCommandEnvelope(text) && !isToolResultRecord(t);
   };
 
-  const turns = conversationOnly([...tree.byUuid.values()]).filter(meaningful);
-  const kept = new Set(turns.map((t) => t.uuid));
+  const all = [...tree.byUuid.values()];
+  const asks = conversationOnly(all).filter(isAsk);
+  const askIds = new Set(asks.map((a) => a.uuid));
 
-  // Re-link through everything we skipped. A turn's immediate parent is very
-  // often an attachment or a tool-result, so linking only on a direct
-  // turn-to-turn parent shattered one conversation into 521 fragments and the
-  // layout drew each as a separate branch.
+  // Relink asks to each other through everything in between (replies, tools,
+  // attachments), so removing the machinery never breaks the chain.
   const graphParent = new Map();
-  for (const t of turns) {
-    let cur = t.parentUuid != null ? tree.byUuid.get(t.parentUuid) : null;
+  for (const a of asks) {
+    let cur = a.parentUuid != null ? tree.byUuid.get(a.parentUuid) : null;
     const seen = new Set();
     while (cur && !seen.has(cur.uuid)) {
-      if (kept.has(cur.uuid)) break;
+      if (askIds.has(cur.uuid)) break;
       seen.add(cur.uuid);
       cur = cur.parentUuid != null ? tree.byUuid.get(cur.parentUuid) : null;
     }
-    if (cur && kept.has(cur.uuid)) graphParent.set(t.uuid, cur.uuid);
+    if (cur && askIds.has(cur.uuid)) graphParent.set(a.uuid, cur.uuid);
+  }
+
+  // Everything an ask produced: the descendants up to (not including) the next
+  // ask. That is the answer we reveal when the node is clicked.
+  const childrenOf = new Map();
+  for (const r of all) {
+    if (r.parentUuid == null) continue;
+    if (!childrenOf.has(r.parentUuid)) childrenOf.set(r.parentUuid, []);
+    childrenOf.get(r.parentUuid).push(r);
+  }
+  function replyFor(ask) {
+    const texts = [];
+    const tools = [];
+    let turns = 0;
+    const stack = [...(childrenOf.get(ask.uuid) || [])];
+    const seen = new Set();
+    while (stack.length) {
+      const n = stack.pop();
+      if (!n || seen.has(n.uuid)) continue;
+      seen.add(n.uuid);
+      if (askIds.has(n.uuid)) continue; // the next ask ends this reply
+      if (n.type === "assistant") {
+        turns++;
+        const txt = extractText(n).trim();
+        if (txt) texts.push(txt);
+        for (const c of Array.isArray(n.message?.content) ? n.message.content : []) {
+          if (c?.type === "tool_use" && c.name) tools.push(c.name);
+        }
+      }
+      for (const c of childrenOf.get(n.uuid) || []) stack.push(c);
+    }
+    return { text: texts.join("\n\n"), tools: [...new Set(tools)], turns };
   }
 
   const live = livePathIds(parsed);
 
-  // Depth over the RELINKED graph, memoised: walking per node with an O(n)
-  // membership test made a 4,000-turn session take 3.6 seconds.
   const depthMemo = new Map();
   const depthOf = (id) => {
     const chain = [];
@@ -310,21 +336,42 @@ export async function getTree(sessionId) {
   };
 
   const frontierIds = new Set(
-    [...tree.byUuid.values()].filter(isCompaction).map((r) => r.logicalParentUuid || r.uuid)
+    all.filter(isCompaction).map((r) => r.logicalParentUuid || r.uuid)
   );
 
-  const nodes = turns.map((t) => ({
-    id: t.uuid,
-    role: t.type,
-    preview: extractText(t).replace(/\s+/g, " ").slice(0, PREVIEW_CHARS),
-    depth: depthOf(t.uuid),
-    onLivePath: live.has(t.uuid),
-    frontier: frontierIds.has(t.uuid),
-    timestamp: t.timestamp || null,
-    tools: (Array.isArray(t.message?.content) ? t.message.content : [])
-      .filter((c) => c?.type === "tool_use")
-      .map((c) => c.name),
-  }));
+  // An ask is live if it, or anything it produced, sits on the live path.
+  const liveAsk = (a) => {
+    if (live.has(a.uuid)) return true;
+    const stack = [...(childrenOf.get(a.uuid) || [])];
+    const seen = new Set();
+    while (stack.length) {
+      const n = stack.pop();
+      if (!n || seen.has(n.uuid)) continue;
+      seen.add(n.uuid);
+      if (askIds.has(n.uuid)) continue;
+      if (live.has(n.uuid)) return true;
+      for (const c of childrenOf.get(n.uuid) || []) stack.push(c);
+    }
+    return false;
+  };
+
+  const nodes = asks.map((a) => {
+    const reply = replyFor(a);
+    return {
+      id: a.uuid,
+      role: "user",
+      preview: extractText(a).replace(/\s+/g, " ").slice(0, PREVIEW_CHARS),
+      depth: depthOf(a.uuid),
+      onLivePath: liveAsk(a),
+      frontier: frontierIds.has(a.uuid),
+      timestamp: a.timestamp || null,
+      reply: {
+        text: reply.text.replace(/\s+/g, " ").slice(0, PREVIEW_CHARS * 2),
+        tools: reply.tools,
+        turns: reply.turns,
+      },
+    };
+  });
 
   const edges = [];
   for (const [child, parent] of graphParent) edges.push({ from: parent, to: child });

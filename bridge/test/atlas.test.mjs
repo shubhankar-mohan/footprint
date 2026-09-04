@@ -90,27 +90,28 @@ test("compaction is reported so the browser can flag it", async () => {
   assert.equal(out.sessions.find((x) => x.id === "s-linear").compactions, 0);
 });
 
-test("getTree returns nodes and edges for rendering", async () => {
+test("getTree returns the asks and the edges between them", async () => {
   const t = await atlas.getTree("s-branch");
   assert.equal(t.ok, true);
-  const ids = t.nodes.map((n) => n.id).sort();
-  assert.deepEqual(ids, ["a", "b", "c", "dead"]);
-  assert.ok(t.edges.some((e) => e.from === "a" && e.to === "b"));
-  assert.ok(t.edges.some((e) => e.from === "a" && e.to === "dead"), "the abandoned branch is still on disk");
+  // Only "a" and "c" were typed by a person; "b" and "dead" are Claude's replies.
+  assert.deepEqual(t.nodes.map((n) => n.id).sort(), ["a", "c"]);
+  assert.ok(t.edges.some((e) => e.from === "a" && e.to === "c"),
+    "asks stay linked through the reply that sat between them");
 });
 
-test("getTree marks which nodes are on the live path to the newest leaf", async () => {
+test("getTree marks which asks are on the live path", async () => {
   const t = await atlas.getTree("s-branch");
-  const live = t.nodes.filter((n) => n.onLivePath).map((n) => n.id).sort();
-  assert.deepEqual(live, ["a", "b", "c"], "the abandoned sibling is not on the live path");
+  assert.deepEqual(t.nodes.filter((n) => n.onLivePath).map((n) => n.id).sort(), ["a", "c"]);
 });
 
-test("getTree gives each node a role, a preview and a depth", async () => {
+test("each ask carries a preview, a depth and the reply it produced", async () => {
   const t = await atlas.getTree("s-branch");
-  const b = t.nodes.find((n) => n.id === "b");
-  assert.equal(b.role, "assistant");
-  assert.match(b.preview, /row-lock/);
-  assert.equal(b.depth, 1, "a is depth 0");
+  const c = t.nodes.find((n) => n.id === "c");
+  assert.equal(c.role, "user");
+  assert.match(c.preview, /what next/);
+  assert.equal(c.depth, 1, "the first ask is depth 0");
+  const a = t.nodes.find((n) => n.id === "a");
+  assert.match(a.reply.text, /row-lock/, "the ask reveals Claude's answer");
 });
 
 test("getTree flags a compaction node as the context frontier", async () => {
@@ -196,7 +197,7 @@ test("a session that is only commands still gets a usable title", async () => {
 // Linking only when the immediate parent is itself a turn shattered a real
 // 1907-node session into 521 disconnected fragments, and the layout then drew
 // each fragment as its own branch lane.
-test("getTree relinks turns through intervening metadata records", async () => {
+test("getTree relinks asks through intervening metadata records", async () => {
   const d = mk("-Users-you-dev-relink");
   write(d, "s-relink", [
     rec("user", "u1", null, "start"),
@@ -205,8 +206,9 @@ test("getTree relinks turns through intervening metadata records", async () => {
     rec("assistant", "a1", "meta2", "answer"),
   ]);
   const t = await atlas.getTree("s-relink");
-  assert.ok(t.edges.some((e) => e.from === "u1" && e.to === "a1"),
-    "the turn chain must survive metadata in between");
+  // a1 is Claude's reply, so it is not a node — it becomes u1's answer.
+  assert.deepEqual(t.nodes.map((n) => n.id), ["u1"]);
+  assert.match(t.nodes[0].reply.text, /answer/, "the reply survives metadata in between");
 });
 
 test("getTree yields exactly one root for a single unbroken conversation", async () => {
@@ -224,7 +226,7 @@ test("getTree yields exactly one root for a single unbroken conversation", async
 });
 
 // 50% of nodes in a real session had neither text nor a tool call.
-test("getTree omits turns with no text and no tool calls", async () => {
+test("an empty assistant turn does not pollute the reply", async () => {
   const d = mk("-Users-you-dev-noise");
   write(d, "s-noise", [
     rec("user", "n1", null, "real question"),
@@ -232,9 +234,8 @@ test("getTree omits turns with no text and no tool calls", async () => {
     rec("assistant", "n3", "n2", "real answer"),
   ]);
   const t = await atlas.getTree("s-noise");
-  assert.deepEqual(t.nodes.map((n) => n.id).sort(), ["n1", "n3"]);
-  assert.ok(t.edges.some((e) => e.from === "n1" && e.to === "n3"),
-    "dropping a noise node must not break the chain");
+  assert.deepEqual(t.nodes.map((n) => n.id), ["n1"]);
+  assert.equal(t.nodes[0].reply.text, "real answer");
 });
 
 test("getTree omits tool-result records, which are the tool talking not the user", async () => {
@@ -276,14 +277,108 @@ test("the live path is computed over the relinked graph, not the raw chain", asy
     `an unbranched conversation is entirely live; got ${live.length}/${t.nodes.length}`);
 });
 
-test("an abandoned rewind branch is still excluded from the live path", async () => {
+test("an ask is live when anything it produced is on the live path", async () => {
   const d = mk("-Users-you-dev-abandon");
   write(d, "s-abandon", [
     rec("user", "A", null, "question"),
-    { ...rec("assistant", "dead", "A", "abandoned"), timestamp: "2020-01-01T00:00:00.000Z" },
     { ...rec("assistant", "good", "A", "kept"), timestamp: "2030-01-01T00:00:00.000Z" },
   ]);
   const t = await atlas.getTree("s-abandon");
-  assert.equal(t.nodes.find((n) => n.id === "good").onLivePath, true);
-  assert.equal(t.nodes.find((n) => n.id === "dead").onLivePath, false);
+  assert.equal(t.nodes.find((n) => n.id === "A").onLivePath, true);
+});
+
+// The graph should show the USER's journey — what they asked — not the
+// machinery. On real sessions this is a 96-99% reduction: one had 979 nodes and
+// only 12 actual asks.
+test("the graph contains only the user's asks", async () => {
+  const d = mk("-Users-you-dev-asks");
+  write(d, "s-asks", [
+    rec("user", "q1", null, "fix the login bug"),
+    rec("assistant", "r1", "q1", "looking at it"),
+    { type: "assistant", uuid: "r2", parentUuid: "r1",
+      message: { content: [{ type: "tool_use", name: "Bash", input: { command: "ls" } }] } },
+    rec("assistant", "r3", "r2", "found it, a null deref"),
+    rec("user", "q2", "r3", "ship it"),
+    rec("assistant", "r4", "q2", "done"),
+  ]);
+  const t = await atlas.getTree("s-asks");
+  assert.deepEqual(t.nodes.map((n) => n.id), ["q1", "q2"]);
+  assert.ok(t.nodes.every((n) => n.role === "user"));
+});
+
+test("consecutive asks stay connected once the replies between them are removed", async () => {
+  const d = mk("-Users-you-dev-chain");
+  write(d, "s-chain", [
+    rec("user", "a1", null, "first ask"),
+    rec("assistant", "b1", "a1", "reply"),
+    rec("user", "a2", "b1", "second ask"),
+  ]);
+  const t = await atlas.getTree("s-chain");
+  assert.ok(t.edges.some((e) => e.from === "a1" && e.to === "a2"));
+});
+
+test("each ask carries the reply it produced", async () => {
+  const d = mk("-Users-you-dev-reply");
+  write(d, "s-reply", [
+    rec("user", "u", null, "why is it slow?"),
+    { type: "assistant", uuid: "t1", parentUuid: "u",
+      message: { content: [{ type: "tool_use", name: "Bash", input: {} }] } },
+    { type: "assistant", uuid: "t2", parentUuid: "t1",
+      message: { content: [{ type: "tool_use", name: "Read", input: {} }] } },
+    rec("assistant", "fin", "t2", "the index is missing"),
+  ]);
+  const t = await atlas.getTree("s-reply");
+  const n = t.nodes[0];
+  assert.match(n.reply.text, /index is missing/, "the answer, not the tool chatter");
+  assert.deepEqual(n.reply.tools.sort(), ["Bash", "Read"]);
+  assert.equal(n.reply.turns, 3, "how much work the ask cost");
+});
+
+test("an ask whose reply is only tool calls still reports them", async () => {
+  const d = mk("-Users-you-dev-toolonly");
+  write(d, "s-toolonly", [
+    rec("user", "u", null, "run the tests"),
+    { type: "assistant", uuid: "t", parentUuid: "u",
+      message: { content: [{ type: "tool_use", name: "Bash", input: {} }] } },
+  ]);
+  const t = await atlas.getTree("s-toolonly");
+  assert.deepEqual(t.nodes[0].reply.tools, ["Bash"]);
+  assert.equal(t.nodes[0].reply.text, "");
+});
+
+test("an ask with no reply yet is still shown", async () => {
+  const d = mk("-Users-you-dev-noreply");
+  write(d, "s-noreply", [rec("user", "u", null, "just asked this")]);
+  const t = await atlas.getTree("s-noreply");
+  assert.equal(t.nodes.length, 1);
+  assert.equal(t.nodes[0].reply.turns, 0);
+});
+
+test("a rewind produces two sibling asks, only one of them live", async () => {
+  const d = mk("-Users-you-dev-rewind");
+  write(d, "s-rewind", [
+    rec("user", "root", null, "start"),
+    rec("assistant", "ra", "root", "ok"),
+    { ...rec("user", "old", "ra", "abandoned ask"), timestamp: "2020-01-01T00:00:00.000Z" },
+    { ...rec("user", "new", "ra", "the real ask"), timestamp: "2030-01-01T00:00:00.000Z" },
+  ]);
+  const t = await atlas.getTree("s-rewind");
+  assert.equal(t.nodes.find((n) => n.id === "new").onLivePath, true);
+  assert.equal(t.nodes.find((n) => n.id === "old").onLivePath, false);
+});
+
+// Background-task notifications arrive as `user` records but are the system
+// talking, not the person. 60 of them leaked into the graph as fake asks.
+test("system-injected notifications are not treated as asks", async () => {
+  const d = mk("-Users-you-dev-notif");
+  write(d, "s-notif", [
+    rec("user", "k1", null, "real ask"),
+    rec("user", "k2", "k1", "<task-notification> <task-id>abc</task-id> done"),
+    rec("user", "k3", "k2", "<system-reminder>be careful</system-reminder>"),
+    rec("user", "k4", "k3", "another real ask"),
+  ]);
+  const t = await atlas.getTree("s-notif");
+  assert.deepEqual(t.nodes.map((n) => n.id), ["k1", "k4"]);
+  assert.ok(t.edges.some((e) => e.from === "k1" && e.to === "k4"),
+    "dropping a notification must not break the chain");
 });

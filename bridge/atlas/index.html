@@ -81,7 +81,8 @@
   .edge.live{stroke:var(--work);stroke-width:2}
   .node{cursor:pointer}
   .node .dot{stroke:var(--panel);stroke-width:2}
-  .node .lbl{font:11.5px var(--sans);fill:var(--muted)}
+  .node .lbl{font:13px var(--sans);fill:var(--ink)}
+  .node .sub{font:11px var(--mono);fill:var(--faint)}
   .node.live .lbl{fill:var(--ink)}
   .node.sel .lbl{fill:var(--ink);font-weight:600}
   .node.sel .dot{r:7;stroke:var(--work);stroke-width:2.5;opacity:1}
@@ -90,7 +91,8 @@
   .node:focus{outline:none}
   .node:focus .lbl{fill:var(--ink);text-decoration:underline}
   .node.dead .dot{opacity:.62}
-  .node.dead .lbl{opacity:.62}
+  .node.dead .lbl{opacity:.5}
+  .node.dead .sub{opacity:.5}
   .frontier{stroke:var(--needs);stroke-dasharray:4 3;stroke-width:1.5}
   .frontierLbl{font:italic 11px var(--serif);fill:var(--needs)}
 
@@ -104,7 +106,14 @@
   #insp[hidden]{display:none}
   #insp .hd{padding:12px 15px;border-bottom:1px solid var(--edge)}
   #insp .role{font:600 11px var(--sans);letter-spacing:.08em;text-transform:uppercase}
-  #insp .body{padding:13px 15px;overflow-y:auto;flex:1;white-space:pre-wrap;font-size:13px;line-height:1.55}
+  #insp .body{padding:13px 15px;overflow-y:auto;flex:1;font-size:13px;line-height:1.55}
+  #insp .ask{white-space:pre-wrap;padding-left:10px;border-left:3px solid var(--needs);color:var(--ink)}
+  #insp .answerHd{
+    margin:16px 0 6px;font:600 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--work);display:flex;gap:8px;align-items:baseline;
+  }
+  #insp .cost{font:11px var(--mono);color:var(--faint);letter-spacing:0;text-transform:none}
+  #insp .answer{white-space:pre-wrap;color:var(--muted)}
   #insp .ref{font:11px var(--mono);color:var(--faint);word-break:break-all;margin-top:6px}
   #insp .acts{padding:11px 15px;border-top:1px solid var(--edge);display:flex;gap:8px;flex-wrap:wrap}
   .btn{
@@ -209,7 +218,7 @@ function renderList() {
 }
 
 /* ── graph ────────────────────────────────────────────────────────────── */
-const COL_W = 150, ROW_H = 24, PAD = 22;
+const COL_W = 170, ROW_H = 62, PAD = 30;
 
 function renderGraph(t) {
   TREE = t;
@@ -248,23 +257,25 @@ function renderGraph(t) {
   }
   for (const n of t.nodes) {
     const p = pos.get(n.id);
-    const col = n.role === "user" ? "var(--needs)" : "var(--work)";
+    const col = "var(--needs)"; // every node is something you asked
     const dead = n.onLivePath ? "" : " dead";
     if (n.frontier) {
       parts.push(`<line class="frontier" x1="${PAD-14}" y1="${p.y-14}" x2="${W-40}" y2="${p.y-14}"/>`);
       parts.push(`<text class="frontierLbl" x="${PAD-10}" y="${p.y-19}">context frontier — compacted above</text>`);
     }
-    // A turn with no prose but real tool calls should say WHAT it did, not
-    // "(no text) · 1 tool" — that line repeated hundreds of times in a real graph.
-    const toolNames = n.tools?.length ? [...new Set(n.tools)].join(", ") : "";
-    const label = n.preview
-      ? n.preview.slice(0, 96)
-      : (toolNames ? `⚙ ${toolNames}` : "·");
-    const tools = n.preview && toolNames ? `  ⚙ ${toolNames}` : "";
+    // Each node is something the user asked. The second line summarises what it
+    // cost — that is the shape of the work, without drawing every step of it.
+    const label = (n.preview || "(empty)").slice(0, 92);
+    const r = n.reply || { tools: [], turns: 0 };
+    const bits = [];
+    if (r.turns) bits.push(`${r.turns} repl${r.turns === 1 ? "y" : "ies"}`);
+    if (r.tools.length) bits.push(r.tools.slice(0, 4).join(", ") + (r.tools.length > 4 ? "…" : ""));
+    const tools = bits.join("  ·  ");
     parts.push(
-      `<g class="node${dead}${n.onLivePath ? " live" : ""}${n.id === SEL ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(n.role)}: ${esc(label)}">
-         <circle class="dot" cx="${p.x}" cy="${p.y}" r="5" fill="${col}"/>
-         <text class="lbl" x="${p.x + 13}" y="${p.y + 4}">${esc(label)}${esc(tools)}</text>
+      `<g class="node${dead}${n.onLivePath ? " live" : ""}${n.id === SEL ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0" role="button" aria-label="You asked: ${esc(label)}">
+         <circle class="dot" cx="${p.x}" cy="${p.y}" r="6" fill="${col}"/>
+         <text class="lbl" x="${p.x + 16}" y="${p.y + 1}">${esc(label)}</text>
+         <text class="sub" x="${p.x + 16}" y="${p.y + 17}">${esc(tools)}</text>
        </g>`
     );
   }
@@ -278,22 +289,27 @@ async function select(id) {
   const n = TREE?.nodes.find((x) => x.id === id);
   if (!n) return;
   $("#insp").hidden = false;
-  $("#iRole").textContent = n.role === "user" ? "You" : "Claude";
-  $("#iRole").style.color = n.role === "user" ? "var(--needs)" : "var(--work)";
+  $("#iRole").textContent = "You asked";
+  $("#iRole").style.color = "var(--needs)";
   $("#iRef").textContent = `node://${CURRENT}/${n.id}`;
   document.querySelectorAll(".node").forEach((g) => g.classList.toggle("sel", g.dataset.id === id));
 
-  // The tree payload only carries a short preview; fetch the whole turn so the
-  // inspector can actually be read rather than skimmed.
-  $("#iBody").textContent = n.preview || "…";
+  const r = n.reply || { tools: [], turns: 0 };
+  const cost = [r.turns ? `${r.turns} repl${r.turns === 1 ? "y" : "ies"}` : null,
+                r.tools.length ? r.tools.join(", ") : null].filter(Boolean).join("  ·  ");
+
+  const render = (ask, answer) => {
+    $("#iBody").innerHTML =
+      `<div class="ask">${esc(ask)}</div>` +
+      `<div class="answerHd">Claude${cost ? ` <span class="cost">${esc(cost)}</span>` : ""}</div>` +
+      `<div class="answer">${esc(answer) || "<em>no reply yet</em>"}</div>`;
+  };
+  render(n.preview || "…", r.text || "");
+
+  // The tree payload carries only a short preview of each; fetch the full ask.
   const full = await api(`/atlas/api/node?session=${encodeURIComponent(CURRENT)}&uuid=${encodeURIComponent(id)}`);
-  if (SEL !== id) return; // the user moved on while we were fetching
-  if (full.ok) {
-    const tools = full.tools?.length
-      ? "\n\n" + full.tools.map((t) => `⚙ ${t.name}(${t.keys.join(", ")})`).join("\n")
-      : "";
-    $("#iBody").textContent = (full.text || "(no text in this turn)") + tools;
-  }
+  if (SEL !== id) return;
+  if (full.ok) render(full.text || "(empty)", r.text || "");
 }
 
 async function openSession(id) {
@@ -307,8 +323,8 @@ async function openSession(id) {
     const live = t.nodes.filter((n) => n.onLivePath).length;
     const off = t.nodes.length - live;
     $("#meta").textContent =
-      `${t.nodes.length} turns · ${live} on the live path` +
-      (off ? ` · ${off} on abandoned branches (dimmed)` : "");
+      `${t.nodes.length} ask${t.nodes.length === 1 ? "" : "s"} · ${t.session.turns} turns behind them` +
+      (off ? ` · ${off} abandoned (dimmed)` : "");
   } else $("#meta").textContent = "";
   $("#graphWrap").scrollTop = 0;
   renderGraph(t);
