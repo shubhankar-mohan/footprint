@@ -19,6 +19,8 @@ import { URL } from "node:url";
 import {
   writePort,
   readPort,
+  ensureDir,
+  CCBAR_DIR,
   EVENT_LOG,
 } from "./lib/paths.js";
 import * as eventlog from "./lib/eventlog.js";
@@ -26,6 +28,9 @@ import * as atlasEngine from "./lib/atlas-engine.js";
 import * as slicer from "./lib/slicer.js";
 import * as marks from "./lib/marks.js";
 import * as titles from "./lib/titles.js";
+import * as notes from "./lib/notes.js";
+import { summarise } from "./lib/stats.js";
+import { buildForkPlan } from "./lib/fork.js";
 import * as sessions from "./lib/sessions.js";
 import * as dismissed from "./lib/dismissed.js";
 import * as pending from "./lib/pending.js";
@@ -171,6 +176,27 @@ const server = http.createServer(async (req, res) => {
         const ref = url.searchParams.get("ref") || "";
         return sendJSON(res, 200, slicer.sliceFor(ref));
       }
+      // The whole corpus in one answer. Both halves are pure functions over the
+      // session list the engine already builds, so this costs one listSessions
+      // and no extra parsing.
+      if (op === "notes") {
+        return sendJSON(res, 200, {
+          ok: true,
+          notes: notes.forSession(url.searchParams.get("session") || ""),
+        });
+      }
+      if (op === "forest") {
+        const d = await atlasEngine.listSessions();
+        const list = d.sessions || [];
+        return sendJSON(res, 200, {
+          ok: true,
+          stats: summarise(list),
+          sessions: list.map((x) => ({
+            id: x.id, project: x.project, title: x.title, turns: x.turns,
+            branches: x.branches, compactions: x.compactions, updatedAt: x.updatedAt,
+          })),
+        });
+      }
       if (op === "marks") {
         return sendJSON(res, 200, { marks: marks.list(url.searchParams.get("session") || undefined) });
       }
@@ -220,6 +246,58 @@ const server = http.createServer(async (req, res) => {
       return sendJSON(res, 200, { ok: true, mark: m });
     } catch (e) {
       return sendJSON(res, 400, { ok: false, error: String(e?.message || e) });
+    }
+  }
+
+  // --- notes: a sentence about why a turn mattered -----------------------
+  // Separate from marks on purpose: a mark is a label you quote by, a note is
+  // the reason, and one cap must not truncate the other.
+  if (req.method === "POST" && pathname === "/atlas/api/note") {
+    const { session, uuid, text } = await readBody(req);
+    try {
+      const saved = notes.set(session, uuid, text);
+      return sendJSON(res, 200, { ok: true, note: saved });
+    } catch (e) {
+      return sendJSON(res, 400, { ok: false, error: String(e?.message || e) });
+    }
+  }
+
+  // --- fork: a new session carrying everything up to one ask -------------
+  // A REPLAY, not a resume — the CLI can only fork from the END of a session
+  // and the SDK route needs node_modules. See lib/fork.js. The original
+  // session is never opened for writing.
+  if (req.method === "POST" && pathname === "/atlas/api/fork") {
+    const { session, uuid, cwd, terminal } = await readBody(req);
+    if (!session || !uuid) return sendJSON(res, 400, { ok: false, error: "need {session, uuid}" });
+    try {
+      const sliced = slicer.sliceFor(`node://${session}/${uuid}`);
+      if (!sliced.ok) return sendJSON(res, 400, { ok: false, error: sliced.error });
+
+      const plan = buildForkPlan({
+        sessionId: session, uuid, cwd,
+        slice: sliced.markdown, turns: sliced.turns,
+      });
+      if (!plan.ok) return sendJSON(res, 400, plan);
+
+      if (!(await tmux.hasTmux())) {
+        return sendJSON(res, 200, {
+          ok: false,
+          error: "tmux is not installed — Footprint uses it to own the forked session.",
+        });
+      }
+
+      // The seed goes to a file, not down a pipe of keystrokes.
+      ensureDir();
+      const seedPath = path.join(CCBAR_DIR, `fork-${Date.now().toString(36)}.md`);
+      fs.writeFileSync(seedPath, plan.seed, "utf8");
+
+      const info = await tmux.launch({ cwd: plan.cwd, flags: { promptFile: seedPath }, terminal });
+      await revealer.reveal({ tier: "owned", session: info.name, app: terminal, cwd: plan.cwd });
+      return sendJSON(res, 200, {
+        ok: true, ...info, turns: plan.turns, truncated: plan.truncated,
+      });
+    } catch (e) {
+      return sendJSON(res, 500, { ok: false, error: String(e?.message || e) });
     }
   }
 

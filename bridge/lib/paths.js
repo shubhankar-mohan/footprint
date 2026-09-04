@@ -35,6 +35,11 @@ export const DISMISSED = path.join(CCBAR_DIR, "dismissed.json");
 // place we write.
 export const MARKS = path.join(CCBAR_DIR, "marks.json");
 
+// Free-text notes on individual nodes. Distinct from MARKS: a mark is a short
+// label you quote by, a note is the sentence explaining why the turn mattered.
+// Sharing storage would let one silently truncate the other.
+export const NOTES = path.join(CCBAR_DIR, "notes.json");
+
 // Session renames. Claude Code stores its own title inside the transcript, but
 // ~/.claude is read-only telemetry — so a user's rename lives here instead and
 // is layered over the derived title at read time.

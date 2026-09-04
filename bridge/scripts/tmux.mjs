@@ -31,6 +31,13 @@ export function claudeCommand(flags = {}) {
   } else if (flags.mode && flags.mode !== "default") {
     parts.push("--permission-mode", flags.mode);
   }
+  // A forked session opens with the carried conversation as its first prompt.
+  // It arrives via command substitution rather than interpolation: the shell
+  // does NOT re-scan the output of $(cat ...), so a seed full of quotes,
+  // backticks or $ cannot break out of the argument. send-keys was the obvious
+  // alternative and the wrong one — it presses Enter at every newline, which
+  // would submit a 90KB seed as dozens of partial prompts.
+  if (flags.promptFile) parts.push(`"$(cat '${flags.promptFile}')"`);
   return parts.join(" ");
 }
 

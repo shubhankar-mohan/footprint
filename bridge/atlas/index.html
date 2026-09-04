@@ -87,6 +87,9 @@
     background:var(--panel);
   }
   #stage{flex:1;min-width:0;display:flex;flex-direction:column}
+  /* Third time in this file: display:flex outranks the [hidden] attribute,
+     so a hidden flex container still lays out. It needs saying explicitly. */
+  #stage[hidden]{display:none}
 
   .grp{
     font:italic 400 var(--fs-base)/1 var(--serif);color:var(--muted);
@@ -189,6 +192,61 @@
   .btn:hover{border-color:var(--work)}
   .btn.pri{background:var(--work);border-color:var(--work);color:var(--panel)}
 
+  /* ── note ─────────────────────────────────────────────────────────── */
+  .noteBox{padding:var(--s3) var(--s4);border-top:1px solid var(--edge);flex:0 0 auto}
+  .noteLbl{
+    display:block;font:600 var(--fs-xs) var(--sans);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:var(--s1);
+  }
+  #iNote{
+    width:100%;resize:vertical;min-height:44px;padding:var(--s2) var(--s3);
+    border:1px solid var(--edge);border-radius:var(--r1);background:var(--sub);
+    color:var(--ink);font:italic 400 var(--fs-base)/1.5 var(--serif);
+  }
+  #iNote::placeholder{font-style:normal;font-family:var(--sans);color:var(--faint)}
+  .noteHelp{margin-top:var(--s1);font:var(--fs-xs) var(--mono);color:var(--faint)}
+  .noteHelp.saved{color:var(--fork)}
+
+  /* Fork is the one destructive-ish action here — it creates. Green, apart
+     from the copy row, with its consequence spelled out beside it. */
+  .acts.forkRow{border-top:0;padding-top:0;align-items:center}
+  .btn.fork{background:var(--fork);border-color:var(--fork);color:var(--panel)}
+  .forkWhy{font:var(--fs-xs) var(--mono);color:var(--faint);flex:1;min-width:0}
+
+  /* ── forest ───────────────────────────────────────────────────────── */
+  #forest{
+    flex:1;min-width:0;overflow-y:auto;background:var(--ground);
+    padding:var(--s5) var(--s5) var(--s6);
+  }
+  #forest[hidden]{display:none}
+  .fHd{font:italic 400 var(--fs-xl) var(--serif);color:var(--ink);margin:0 0 var(--s1)}
+  .fSub{font:var(--fs-base) var(--sans);color:var(--muted);margin-bottom:var(--s5);max-width:64ch}
+  .fStats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:var(--s3);margin-bottom:var(--s5)}
+  .fStat{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r2);padding:var(--s3) var(--s4)}
+  .fStat .v{font:italic 400 24px/1 var(--serif);color:var(--ink);font-variant-numeric:tabular-nums}
+  .fStat .k{margin-top:var(--s1);font:500 var(--fs-xs) var(--sans);color:var(--muted)}
+  .fStat.flag .v{color:var(--needs)}
+  .fProj{margin-bottom:var(--s4)}
+  .fProjHd{
+    display:flex;align-items:baseline;gap:var(--s2);margin-bottom:var(--s2);
+    font:italic 400 var(--fs-lg) var(--serif);color:var(--ink);
+  }
+  .fProjHd span{font:var(--fs-xs) var(--mono);color:var(--faint)}
+  .fBars{display:flex;gap:3px;align-items:flex-end;height:56px}
+  .fBar{
+    width:16px;border-radius:2px;background:var(--work);border:0;padding:0;
+    cursor:pointer;flex:0 0 auto;
+  }
+  .fBar:hover{outline:2px solid var(--ink);outline-offset:1px}
+  .fBar.compacted{background:var(--needs)}
+  .fBar.small{background:var(--idle)}
+  .fLegend{
+    margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--edge2);
+    font:var(--fs-xs) var(--mono);color:var(--faint);
+  }
+  .fLegend b{font-weight:400}
+  .fLegend .w{color:var(--work)}.fLegend .n{color:var(--needs)}.fLegend .i{color:var(--idle-ink)}
+
   .empty{padding:var(--s6) var(--s5);text-align:center;color:var(--muted)}
   .empty .q{font:italic 400 var(--fs-xl) var(--serif);margin-bottom:var(--s1);color:var(--ink)}
   /* Failure has to look different from emptiness. Before this, a dead bridge
@@ -260,6 +318,8 @@
     <span>Footprint<b>Atlas</b></span>
   </span>
   <input id="q" type="search" placeholder="Search every session…  (⌘K)" autocomplete="off" aria-label="Search all sessions">
+  <button class="btn" id="aForest" aria-pressed="false"
+          title="Every session at once">Forest</button>
   <span class="stat" id="stat" role="status">loading…</span>
 </header>
 
@@ -278,14 +338,28 @@
       <div class="empty"><div class="q">The map is quiet.</div><div>Pick a session on the left to see its shape.</div></div>
     </div>
   </div>
+  <section id="forest" hidden aria-label="Every session"></section>
+
   <aside id="insp" hidden aria-label="Selected ask">
     <div class="hd"><div class="role" id="iRole"></div><div class="ref" id="iRef"></div></div>
     <div class="body" id="iBody"></div>
+    <div class="noteBox">
+      <label class="noteLbl" for="iNote">Your note</label>
+      <textarea id="iNote" rows="2" placeholder="Why did this turn matter?"
+                aria-describedby="iNoteHelp"></textarea>
+      <div class="noteHelp" id="iNoteHelp">Saves on its own.</div>
+    </div>
     <div class="acts">
       <button class="btn pri" id="aQuote">Copy slice</button>
       <button class="btn" id="aRead">Read full</button>
       <button class="btn" id="aMark">Mark…</button>
       <button class="btn" id="aRef">Copy ref</button>
+    </div>
+    <!-- Fork sits apart from the copy actions on purpose: those change nothing,
+         this one creates a whole session. Grouping them invites a misclick. -->
+    <div class="acts forkRow">
+      <button class="btn fork" id="aFork">Fork from here</button>
+      <span class="forkWhy">starts a new session · the original is untouched</span>
     </div>
   </aside>
 </main>
@@ -621,6 +695,7 @@ async function select(id) {
       `<div class="answer">${esc(answer) || "<em>no reply yet</em>"}</div>`;
   };
   render(n.preview || "…", r.text || "");
+  loadNote(id);
 
   // The tree payload carries only a short preview of each; fetch the full ask.
   try {
@@ -658,6 +733,12 @@ async function openSession(id) {
   } else $("#meta").textContent = "";
   $("#graphWrap").scrollTop = 0;
   renderGraph(t);
+  // Notes are per-node and cheap; fetch them with the session rather than one
+  // request per card. A failure here must not take the graph down with it.
+  try {
+    const n = await api(`/atlas/api/notes?session=${encodeURIComponent(id)}`);
+    NOTES = n.ok ? (n.notes || {}) : {};
+  } catch { NOTES = {}; }
 }
 
 function setTitle(s) {
@@ -665,6 +746,190 @@ function setTitle(s) {
     esc(s?.title || CURRENT || "Select a session") +
     (s?.renamed ? '<span class="renamed">renamed</span>' : "");
 }
+
+/* ── notes ────────────────────────────────────────────────────────────────
+   A mark is a label you quote by; a note is the sentence explaining why the
+   turn mattered — the one thing the transcript can never reconstruct for you.
+   Saved on a pause rather than behind a button, because a note you have to
+   remember to save is a note you do not write. */
+let NOTES = {};
+let noteTimer;
+
+function loadNote(uuid) {
+  const box = $("#iNote");
+  box.value = NOTES[uuid] || "";
+  setNoteHelp("Saves on its own.", false);
+}
+function setNoteHelp(text, saved) {
+  const h = $("#iNoteHelp");
+  h.textContent = text;
+  h.classList.toggle("saved", !!saved);
+}
+
+$("#iNote").addEventListener("input", () => {
+  clearTimeout(noteTimer);
+  setNoteHelp("Saving…", false);
+  const uuid = SEL, text = $("#iNote").value;
+  noteTimer = setTimeout(async () => {
+    if (!uuid) return;
+    try {
+      const r = await post("/atlas/api/note", { session: CURRENT, uuid, text });
+      if (!r.ok) return setNoteHelp(r.error || "Could not save that note.", false);
+      if (r.note) NOTES[uuid] = r.note; else delete NOTES[uuid];
+      // Only report success for the node still on screen — a fast click away
+      // would otherwise flash "Saved" against someone else's note.
+      if (SEL === uuid) setNoteHelp(r.note ? "Saved." : "Note cleared.", true);
+    } catch (e) {
+      setNoteHelp(`Could not save — ${errMsg(e)}`, false);
+    }
+  }, 700);
+});
+
+/* ── fork ─────────────────────────────────────────────────────────────────
+   A REPLAY, not a resume: the CLI can only fork from the end of a session, so
+   this opens a new one seeded with the conversation up to here. The promise —
+   carry on from this ask without disturbing the original — holds exactly; the
+   cost is that the recap is paid for in tokens. Say so before doing it. */
+$("#aFork").addEventListener("click", async () => {
+  if (!CURRENT || !SEL) return;
+  const s = SESSIONS.find((x) => x.id === CURRENT);
+  const ok = await confirmFork();
+  if (!ok) return;
+  toast("Forking…");
+  try {
+    const r = await post("/atlas/api/fork", { session: CURRENT, uuid: SEL, cwd: s?.cwd });
+    if (!r.ok) return toast(r.error || "Could not fork this session.");
+    toast(
+      `Forked — ${r.turns} turn${r.turns === 1 ? "" : "s"} carried into a new session` +
+      (r.truncated ? " (earlier turns dropped for length)" : "")
+    );
+  } catch (e) {
+    toast(`Could not fork — ${errMsg(e)}`);
+  }
+});
+
+function confirmFork() {
+  return new Promise((resolve) => {
+    const dlg = $("#promptDlg"), input = $("#pInput");
+    $("#pTitle").textContent = "Fork from this ask";
+    $("#pLabel").textContent =
+      "Opens a new session carrying the conversation up to here. The original is untouched. " +
+      "The carried conversation is replayed as a recap, so it costs tokens in the new session.";
+    input.style.display = "none";
+    $("#pOk").textContent = "Fork";
+    let settled = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      input.style.display = "";
+      $("#pOk").textContent = "Save";
+      dlg.close();
+      resolve(v);
+    };
+    $("#pForm").onsubmit = (e) => { e.preventDefault(); finish(true); };
+    $("#pCancel").onclick = () => finish(false);
+    dlg.addEventListener("close", () => finish(false), { once: true });
+    dlg.showModal();
+    $("#pOk").focus();
+  });
+}
+
+/* ── forest ───────────────────────────────────────────────────────────────
+   Thirty thousand turns is not browsable one session at a time. Bar height is
+   turns; colour is what happened to the session. */
+let FOREST_ON = false;
+
+async function openForest() {
+  FOREST_ON = true;
+  $("#forest").hidden = false;
+  $("#stage").hidden = true;
+  $("#insp").hidden = true;
+  $("#aForest").setAttribute("aria-pressed", "true");
+  $("#forest").innerHTML = `<div class="empty">Reading every session…</div>`;
+  let d;
+  try {
+    d = await api("/atlas/api/forest");
+  } catch (e) {
+    $("#forest").innerHTML = errorBlock("Could not read your sessions.", errMsg(e), "forest");
+    return;
+  }
+  if (!d.ok) {
+    $("#forest").innerHTML = errorBlock("Could not read your sessions.", d.error || "Unknown error", "forest");
+    return;
+  }
+  renderForest(d);
+}
+
+function closeForest() {
+  FOREST_ON = false;
+  $("#forest").hidden = true;
+  $("#stage").hidden = false;
+  $("#aForest").setAttribute("aria-pressed", "false");
+}
+
+function renderForest(d) {
+  const st = d.stats;
+  const byProj = new Map();
+  for (const s of d.sessions) {
+    if (!byProj.has(s.project)) byProj.set(s.project, []);
+    byProj.get(s.project).push(s);
+  }
+  const order = st.projects.map((p) => p.project);
+  const maxTurns = Math.max(1, ...d.sessions.map((s) => s.turns || 0));
+
+  const pct = st.sessions ? Math.round((st.sessionsThatCompacted / st.sessions) * 100) : 0;
+  const out = [
+    `<h2 class="fHd">Every session you have run</h2>`,
+    `<p class="fSub">Bar height is turns. One bar is one session — click it to open.</p>`,
+    `<div class="fStats">`,
+      stat(st.sessions, "sessions"),
+      stat(st.turns.toLocaleString(), "turns"),
+      stat(st.medianTurns, "median turns"),
+      stat(st.compactionsPerSession, "compactions / session", true),
+      stat(`${pct}%`, "of sessions compacted", true),
+      stat(st.busiest || "—", "busiest project"),
+    `</div>`,
+  ];
+
+  for (const proj of order) {
+    const rows = (byProj.get(proj) || []).slice().sort((a, b) => b.turns - a.turns);
+    const p = st.projects.find((x) => x.project === proj);
+    out.push(
+      `<div class="fProj">
+         <div class="fProjHd">${esc(proj)}
+           <span>${p.sessions} session${p.sessions === 1 ? "" : "s"} · ${p.turns.toLocaleString()} turns${p.compactions ? ` · ${p.compactions} compactions` : ""}</span>
+         </div>
+         <div class="fBars">` +
+      rows.map((r) => {
+        const h = Math.max(5, Math.round(((r.turns || 0) / maxTurns) * 56));
+        const cls = r.compactions ? "compacted" : (r.turns < maxTurns * 0.08 ? "small" : "");
+        const label = `${r.title} — ${r.turns} turns${r.compactions ? `, ${r.compactions} compactions` : ""}`;
+        return `<button class="fBar ${cls}" style="height:${h}px" data-id="${esc(r.id)}"
+                        title="${esc(label)}" aria-label="${esc(label)}"></button>`;
+      }).join("") +
+      `</div></div>`
+    );
+  }
+  out.push(
+    `<div class="fLegend"><b><span class="w">blue</span> never compacted ·
+     <span class="n">amber</span> hit the context limit ·
+     <span class="i">grey</span> ended early</b></div>`
+  );
+  $("#forest").innerHTML = out.join("");
+}
+
+const stat = (v, k, flag) =>
+  `<div class="fStat${flag ? " flag" : ""}"><div class="v">${esc(v)}</div><div class="k">${esc(k)}</div></div>`;
+
+$("#aForest").addEventListener("click", () => (FOREST_ON ? closeForest() : openForest()));
+$("#forest").addEventListener("click", (e) => {
+  const retry = e.target.closest("[data-retry]");
+  if (retry) return openForest();
+  const bar = e.target.closest(".fBar");
+  if (!bar) return;
+  closeForest();
+  openSession(bar.dataset.id);
+});
 
 /* ── session actions ──────────────────────────────────────────────────── */
 $("#aRename").addEventListener("click", async () => {

@@ -39,10 +39,10 @@ test("initialize returns protocol version and server info", async () => {
   assert.ok(r.result.capabilities.tools, "must advertise tool support");
 });
 
-test("tools/list advertises get_slice, mark and list_marks", async () => {
+test("tools/list advertises the whole surface", async () => {
   const r = await handleRequest({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
   const names = r.result.tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["get_slice", "list_marks", "mark"]);
+  assert.deepEqual(names, ["get_slice", "list_marks", "mark", "note", "read_notes"]);
 });
 
 test("every advertised tool has a description and an input schema", () => {
@@ -117,4 +117,39 @@ test("list_marks says so plainly when there are none", async () => {
   marks._reset();
   const r = await call("list_marks", { session: "empty-session" });
   assert.match(r.result.content[0].text, /no marks/i);
+});
+
+// ── notes over MCP ────────────────────────────────────────────────────────
+// A note is written from the Atlas but read from inside a live session, which
+// is the only place it is actually useful — "why did I do this" answered
+// without leaving the terminal.
+test("the note tool is advertised", async () => {
+  const { TOOLS } = await import("../lib/mcp.js");
+  const names = TOOLS.map((t) => t.name);
+  assert.ok(names.includes("note"), "note should be listed");
+  assert.ok(names.includes("read_notes"), "read_notes should be listed");
+});
+
+test("note writes and read_notes reads it back", async () => {
+  const { handleRequest } = await import("../lib/mcp.js");
+  const w = await handleRequest({
+    jsonrpc: "2.0", id: 1, method: "tools/call",
+    params: { name: "note", arguments: { session: "s-mcp", uuid: "u-mcp", text: "because the schema said so" } },
+  });
+  assert.ok(!w.result.isError, JSON.stringify(w.result));
+
+  const r = await handleRequest({
+    jsonrpc: "2.0", id: 2, method: "tools/call",
+    params: { name: "read_notes", arguments: { session: "s-mcp" } },
+  });
+  assert.match(r.result.content[0].text, /because the schema said so/);
+});
+
+test("read_notes on a session with none says so plainly", async () => {
+  const { handleRequest } = await import("../lib/mcp.js");
+  const r = await handleRequest({
+    jsonrpc: "2.0", id: 3, method: "tools/call",
+    params: { name: "read_notes", arguments: { session: "s-empty" } },
+  });
+  assert.match(r.result.content[0].text, /no notes/i);
 });

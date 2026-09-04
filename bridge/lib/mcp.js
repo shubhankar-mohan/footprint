@@ -13,6 +13,7 @@
 
 import * as marks from "./marks.js";
 import { sliceFor } from "./slicer.js";
+import * as notes from "./notes.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
 
@@ -48,6 +49,32 @@ export const TOOLS = [
         label: { type: "string", description: "A short memorable name, e.g. 'root-cause'." },
       },
       required: ["session", "uuid", "label"],
+    },
+  },
+  {
+    name: "note",
+    description:
+      "Record why a turn mattered, in your own words. A mark is a label you quote by; a note is the reason behind it — the one thing the transcript cannot reconstruct later. Writing an empty note clears it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session: { type: "string", description: "The session id the turn belongs to." },
+        uuid: { type: "string", description: "The uuid of the turn to annotate." },
+        text: { type: "string", description: "The note. A sentence or two is the point." },
+      },
+      required: ["session", "uuid", "text"],
+    },
+  },
+  {
+    name: "read_notes",
+    description:
+      "Read back the notes recorded against turns in a session. Use this to recover the reasoning behind an old decision without re-reading the whole transcript.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session: { type: "string", description: "The session id to read notes from." },
+      },
+      required: ["session"],
     },
   },
   {
@@ -88,6 +115,24 @@ async function callTool(name, args = {}) {
       }
       const lines = list.map((m) => `- **${m.label}** — \`${m.ref}\``);
       return ok(`${list.length} mark${list.length === 1 ? "" : "s"}:\n\n${lines.join("\n")}`);
+    }
+    case "note": {
+      try {
+        const saved = notes.set(args.session, args.uuid, args.text);
+        notes.flush();
+        return ok(saved
+          ? `Noted against \`${args.uuid}\`:\n\n> ${saved}`
+          : `Cleared the note on \`${args.uuid}\`.`);
+      } catch (e) {
+        return fail(String(e.message || e));
+      }
+    }
+    case "read_notes": {
+      const all = notes.forSession(args.session);
+      const keys = Object.keys(all);
+      if (!keys.length) return ok(`No notes in session ${args.session}.`);
+      const lines = keys.map((u) => `- \`${u}\`\n  > ${all[u]}`);
+      return ok(`${keys.length} note${keys.length === 1 ? "" : "s"}:\n\n${lines.join("\n")}`);
     }
     default:
       return fail(`Unknown tool: ${name}`);

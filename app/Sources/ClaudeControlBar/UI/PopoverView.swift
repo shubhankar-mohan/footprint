@@ -7,6 +7,9 @@ struct PopoverView: View {
   let onDecide: (String, String) -> Void
   @State private var showSettings = false
   @State private var showStart = false
+  // Set by either exit from onboarding, so the first-run screen is shown once
+  // and never returns — turning monitoring on later lives behind the gear.
+  @AppStorage("cc.hasSeenOnboarding") private var hasSeenOnboarding = false
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
@@ -14,10 +17,18 @@ struct PopoverView: View {
       SettingsView(model: model, show: $showSettings)
     } else if showStart {
       StartSessionView(model: model, show: $showStart)
+    } else if showOnboarding {
+      // Enabling from here hands off to Monitoring, which reports whether the
+      // install worked and that a new session has to be started.
+      OnboardingView(model: model, hasSeen: $hasSeenOnboarding) { showSettings = true }
     } else {
       main
     }
   }
+
+  // Only before anything has ever been written: hooks already present (installed
+  // by hand, or in an earlier run) mean the user has made this decision.
+  private var showOnboarding: Bool { !hasSeenOnboarding && !model.hooksInstalled }
 
   private var main: some View {
     VStack(alignment: .leading, spacing: 0) {

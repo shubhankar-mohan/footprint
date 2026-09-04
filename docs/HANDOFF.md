@@ -245,12 +245,27 @@ The definitive visuals. Open these to see the design; they're the spec:
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| **0 — Ship the Bar** | Repo · tag · tap · real sha256 · rename to Footprint · working uninstall · 2 live P1 fixes | 🚧 code done, release pending |
-| **1 — References** | `/mark` + MCP `get_slice` on the existing bridge. Needs no Atlas. | ⏳ next |
-| **2 — Spike + Engine** | JSONL→tree spike (4 schema Qs), worker-thread parser, byte-offset tailing, index | ⏳ |
-| **3 — Atlas** | Browser + search + graph + inspector/modal; Bar gains "Open in Atlas" | ⏳ |
-| **4 — Forks** | Fork-from-node via Agent SDK; multi-branch graph | ⏳ |
-| **5 — Polish** | Analytics, annotations, diff, subagent sub-graphs, forest view | ⏳ |
+| **0 — Ship the Bar** | Repo · tag · tap · real sha256 · rename to Footprint · working uninstall | ✅ done — v0.1.0 released |
+| **1 — References** | `/mark` + MCP `get_slice` on the existing bridge | ✅ done — `get_slice`, `mark`, `list_marks` |
+| **2 — Spike + Engine** | JSONL→tree spike (4 schema Qs), worker-thread parser, bounded reads, index | ✅ done |
+| **3 — Atlas** | Browser + search + graph + inspector/modal; Bar gains "Open in Atlas" | ✅ done — plus a 38-finding a11y pass |
+| **4 — Forks** | Fork-from-node; multi-branch graph | ✅ done — see the caveat below |
+| **5 — Polish** | Onboarding, annotations, forest, analytics, Sparkle, notarised dmg | 🚧 onboarding · notes · forest · stats done; Sparkle + notarised dmg open |
+
+**Fork is a replay, not a resume.** The original plan assumed the Agent SDK's
+`resume + forkSession + resumeSessionAt`. Two things rule that out: the CLI's
+`--fork-session` only forks from the *end* of a session (there is no
+`--resume-at <uuid>` in Claude Code 2.1.260), and the SDK route needs
+`node_modules`, which would break the dependency-free bridge that makes the
+shipped `.app` self-contained. So a fork opens a **new** session seeded with the
+root→node slice. The user-facing promise — carry on from this ask without
+disturbing the original — holds exactly; the difference is that the recap is
+paid for in tokens rather than inherited as cached context. The confirm dialog
+says so. See `bridge/lib/fork.js`.
+
+**Still open in Phase 5:** Sparkle auto-update, notarised `.dmg`, subagent
+sub-graphs, and the canvas prototype in `prototypes/` (undecided — either the
+Atlas's future or dead weight).
 
 **Why this order (D6):** the original plan built four Atlas phases on top of a Bar with zero distribution — no git remote, a placeholder cask checksum, a 404 URL. And the differentiator (quote a past turn back into a live session) turns out to be an MCP server, not a web app.
 
