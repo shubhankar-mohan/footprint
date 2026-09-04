@@ -51,3 +51,4 @@ port
 
 # ─── Throwaway spikes (kept out of the shipped tree) ─────
 bridge/spike/
+.gstack/

@@ -14,10 +14,21 @@ import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import assert from "node:assert";
 import { fileURLToPath } from "node:url";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = 8791;
+
+// The test bridge MUST NOT share state or a port with a real one. It used to
+// boot on 8791 against the real ~/.claude-control-bar, which meant it
+// overwrote the running app's port file — and then live Claude Code sessions,
+// reading that file, posted their real statusline rate_limits into the test
+// bridge. Their usage window is newer than the fixture's, so usage.set()
+// correctly rejected the fixture as stale and the assertion failed. Own dir,
+// own port, no crosstalk.
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ccbar-smoke-"));
+const PORT = 8000 + (process.pid % 700);
 const base = `http://127.0.0.1:${PORT}`;
 let pass = 0;
 const ok = (cond, msg) => {
@@ -72,6 +83,7 @@ async function main() {
   const server = spawn("node", [path.join(__dirname, "..", "server.js")], {
     env: {
       ...process.env,
+      CCBAR_DIR: TMP_DIR, // never touch the real app's port file / map
       CCBAR_PORT: String(PORT),
       CCBAR_NO_DISCOVER: "1",
       CCBAR_NO_USAGE_POLL: "1", // don't hit the keychain / network in tests
