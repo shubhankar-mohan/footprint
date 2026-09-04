@@ -23,6 +23,9 @@ function shortId() {
 // flags.mode -> --permission-mode <acceptEdits|plan|default>
 export function claudeCommand(flags = {}) {
   const parts = ["claude"];
+  // Continue an existing conversation rather than starting a new one. The id
+  // comes from a transcript filename, so it is a uuid — quote it anyway.
+  if (flags.resume) parts.push("--resume", JSON.stringify(String(flags.resume)));
   if (flags.skip) {
     parts.push("--dangerously-skip-permissions");
   } else if (flags.mode && flags.mode !== "default") {

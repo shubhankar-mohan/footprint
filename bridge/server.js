@@ -25,6 +25,7 @@ import * as eventlog from "./lib/eventlog.js";
 import * as atlasEngine from "./lib/atlas-engine.js";
 import * as slicer from "./lib/slicer.js";
 import * as marks from "./lib/marks.js";
+import * as titles from "./lib/titles.js";
 import * as sessions from "./lib/sessions.js";
 import * as dismissed from "./lib/dismissed.js";
 import * as pending from "./lib/pending.js";
@@ -178,6 +179,39 @@ const server = http.createServer(async (req, res) => {
     }
     return sendJSON(res, 404, { ok: false, error: `Unknown Atlas endpoint: ${op}` });
   }
+  // Rename a session. Written to OUR sidecar — ~/.claude stays read-only.
+  if (req.method === "POST" && pathname === "/atlas/api/rename") {
+    const { session, name } = await readBody(req);
+    try {
+      const applied = titles.set(session, name);
+      titles.flush();
+      return sendJSON(res, 200, { ok: true, title: applied });
+    } catch (e) {
+      return sendJSON(res, 400, { ok: false, error: String(e?.message || e) });
+    }
+  }
+
+  // Reply to a past conversation: open a terminal running `claude --resume <id>`
+  // in that session's own directory, so the context is already loaded.
+  if (req.method === "POST" && pathname === "/atlas/api/resume") {
+    const { session, cwd, terminal } = await readBody(req);
+    if (!session) return sendJSON(res, 400, { ok: false, error: "need {session}" });
+    try {
+      if (!(await tmux.hasTmux())) {
+        return sendJSON(res, 200, {
+          ok: false,
+          error: "tmux is not installed — Footprint uses it to own a session it can reply to.",
+          command: `claude --resume ${session}`,
+        });
+      }
+      const info = await tmux.launch({ cwd, flags: { resume: session }, terminal });
+      await revealer.reveal({ tier: "owned", session: info.name, app: terminal, cwd });
+      return sendJSON(res, 200, { ok: true, ...info });
+    } catch (e) {
+      return sendJSON(res, 500, { ok: false, error: String(e?.message || e) });
+    }
+  }
+
   if (req.method === "POST" && pathname === "/atlas/api/mark") {
     const { session, uuid, label } = await readBody(req);
     try {
@@ -466,6 +500,7 @@ function shutdown() {
   log("shutting down");
   sessionMap.flush(); // a coalesced write may still be pending
   marks.flush();
+  titles.flush();
   atlasEngine.shutdown();
   server.close(() => process.exit(0));
 }

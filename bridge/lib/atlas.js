@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { buildTree, conversationOnly } from "./tree.js";
 import { extractText } from "./slice.js";
+import * as titles from "./titles.js";
 
 const PROJECTS = () =>
   process.env.CCBAR_PROJECTS || path.join(os.homedir(), ".claude", "projects");
@@ -162,9 +163,12 @@ function parseSession(meta) {
   const firstUserText = firstHuman ? extractText(firstHuman).trim() : "";
   const lastAssistant = [...turns].reverse().find((t) => t.type === "assistant" && extractText(t).trim());
 
-  const title =
+  // A user rename wins over anything derived from the transcript.
+  const override = titles.get(meta.id);
+  const derived =
     titleRec?.title?.trim() ||
     (firstUserText ? firstUserText.slice(0, 80) : `Session ${meta.id.slice(0, 8)}`);
+  const title = override || derived;
 
   const preview =
     (lastAssistant ? extractText(lastAssistant) : firstUserText || "(no text yet)")
@@ -180,6 +184,9 @@ function parseSession(meta) {
     size: meta.size,
     title,
     preview,
+    derivedTitle: derived,
+    renamed: Boolean(override),
+    cwd: records.find((r) => r.cwd)?.cwd || null,
     turns: turns.length,
     branches,
     compactions: records.filter(isCompaction).length,
@@ -192,10 +199,21 @@ function parseSession(meta) {
 }
 
 // The cheap path: a row without holding the records or the tree.
+//
+// The cache is keyed by file mtime, but a rename changes the SIDECAR, not the
+// transcript — so the override is applied here, on every read, rather than
+// baked into the cached row where it would go stale until the file changed.
+function withTitle(row) {
+  const override = titles.get(row.id);
+  return override
+    ? { ...row, title: override, renamed: true }
+    : { ...row, title: row.derivedTitle ?? row.title, renamed: false };
+}
+
 function summaryOf(meta) {
   const hit = summaryCache.get(meta.id);
-  if (hit && hit.mtime === meta.mtime) return hit.row;
-  return rowOf(parseSession(meta));
+  if (hit && hit.mtime === meta.mtime) return withTitle(hit.row);
+  return withTitle(rowOf(parseSession(meta)));
 }
 
 // Strip the heavy fields before anything crosses the wire.
@@ -203,6 +221,9 @@ const rowOf = (p) => ({
   id: p.id,
   project: p.project,
   title: p.title,
+  derivedTitle: p.derivedTitle,
+  renamed: p.renamed,
+  cwd: p.cwd,
   preview: p.preview,
   turns: p.turns,
   branches: p.branches,
@@ -314,8 +335,39 @@ export async function getTree(sessionId) {
     return { text: texts.join("\n\n"), tools: [...new Set(tools)], turns };
   }
 
-  const live = livePathIds(parsed);
+  // "Abandoned" means a rewind superseded it — NOT merely "off the newest
+  // chain". The old definition walked from the single newest leaf, and since a
+  // compaction re-roots that chain it marked 21 of 46 asks in an actively-used
+  // session as abandoned — in a session with ZERO forks.
+  //
+  // An ask is abandoned only if it, or an ancestor, lost a fork: a parent with
+  // more than one child ask keeps the newest and discards the rest.
+  const childAsks = new Map();
+  for (const [child, parent] of graphParent) {
+    if (!childAsks.has(parent)) childAsks.set(parent, []);
+    childAsks.get(parent).push(child);
+  }
+  const at = (id) => Date.parse(tree.byUuid.get(id)?.timestamp || 0) || 0;
+  const abandoned = new Set();
+  const bury = (id) => {
+    const stack = [id];
+    const seen = new Set();
+    while (stack.length) {
+      const cur = stack.pop();
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      abandoned.add(cur);
+      for (const c of childAsks.get(cur) || []) stack.push(c);
+    }
+  };
+  for (const [, siblings] of childAsks) {
+    if (siblings.length < 2) continue;
+    const kept = siblings.reduce((a, b) => (at(b) >= at(a) ? b : a));
+    for (const sib of siblings) if (sib !== kept) bury(sib);
+  }
 
+  // Depth over the relinked ask graph, memoised: a walk to the root per node
+  // with an O(n) membership test inside took 3.6s on a 4,000-turn session.
   const depthMemo = new Map();
   const depthOf = (id) => {
     const chain = [];
@@ -339,22 +391,6 @@ export async function getTree(sessionId) {
     all.filter(isCompaction).map((r) => r.logicalParentUuid || r.uuid)
   );
 
-  // An ask is live if it, or anything it produced, sits on the live path.
-  const liveAsk = (a) => {
-    if (live.has(a.uuid)) return true;
-    const stack = [...(childrenOf.get(a.uuid) || [])];
-    const seen = new Set();
-    while (stack.length) {
-      const n = stack.pop();
-      if (!n || seen.has(n.uuid)) continue;
-      seen.add(n.uuid);
-      if (askIds.has(n.uuid)) continue;
-      if (live.has(n.uuid)) return true;
-      for (const c of childrenOf.get(n.uuid) || []) stack.push(c);
-    }
-    return false;
-  };
-
   const nodes = asks.map((a) => {
     const reply = replyFor(a);
     return {
@@ -362,7 +398,7 @@ export async function getTree(sessionId) {
       role: "user",
       preview: extractText(a).replace(/\s+/g, " ").slice(0, PREVIEW_CHARS),
       depth: depthOf(a.uuid),
-      onLivePath: liveAsk(a),
+      onLivePath: !abandoned.has(a.uuid),
       frontier: frontierIds.has(a.uuid),
       timestamp: a.timestamp || null,
       reply: {
@@ -376,7 +412,7 @@ export async function getTree(sessionId) {
   const edges = [];
   for (const [child, parent] of graphParent) edges.push({ from: parent, to: child });
 
-  return { ok: true, session: rowOf(parsed), nodes, edges };
+  return { ok: true, session: withTitle(rowOf(parsed)), nodes, edges };
 }
 
 // The full text of one turn. The tree payload carries only short previews —

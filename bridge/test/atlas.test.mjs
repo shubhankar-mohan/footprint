@@ -382,3 +382,67 @@ test("system-injected notifications are not treated as asks", async () => {
   assert.ok(t.edges.some((e) => e.from === "k1" && e.to === "k4"),
     "dropping a notification must not break the chain");
 });
+
+test("a renamed session shows the user's name, not the derived one", async () => {
+  const titles = await import("../lib/titles.js");
+  const d = mk("-Users-you-dev-rename");
+  write(d, "s-rename", [rec("user", "z1", null, "some rambling first message")]);
+  titles.set("s-rename", "Payments spike");
+  const out = await atlas.listSessions();
+  const s = out.sessions.find((x) => x.id === "s-rename");
+  assert.equal(s.title, "Payments spike");
+  assert.equal(s.renamed, true, "the UI needs to know it is an override");
+  titles.set("s-rename", "");
+  const back = (await atlas.listSessions()).sessions.find((x) => x.id === "s-rename");
+  assert.match(back.title, /rambling/, "clearing restores the derived title");
+  assert.equal(back.renamed, false);
+});
+
+test("a session row exposes its cwd so it can be resumed in the right directory", async () => {
+  const d = mk("-Users-you-dev-cwd");
+  write(d, "s-cwd", [{ ...rec("user", "c1", null, "hi"), cwd: "/Users/you/dev/thing" }]);
+  const out = await atlas.listSessions();
+  assert.equal(out.sessions.find((x) => x.id === "s-cwd").cwd, "/Users/you/dev/thing");
+});
+
+// "Abandoned" must mean a rewind superseded it — NOT merely "off the single
+// newest chain". Compaction re-roots that chain, so the old definition marked
+// 21 of 46 asks in an actively-used session as abandoned.
+test("asks in a plain linear conversation are never marked abandoned", async () => {
+  const d = mk("-Users-you-dev-linear2");
+  const recs = [];
+  for (let i = 0; i < 6; i++) {
+    recs.push(rec("user", `q${i}`, i ? `a${i - 1}` : null, `ask ${i}`));
+    recs.push(rec("assistant", `a${i}`, `q${i}`, `answer ${i}`));
+  }
+  write(d, "s-linear2", recs);
+  const t = await atlas.getTree("s-linear2");
+  assert.equal(t.nodes.filter((n) => !n.onLivePath).length, 0,
+    "nothing was rewound, so nothing is abandoned");
+});
+
+test("compaction does not make everything before it look abandoned", async () => {
+  const d = mk("-Users-you-dev-compact2");
+  write(d, "s-compact2", [
+    rec("user", "c1", null, "before compaction"),
+    rec("assistant", "ca", "c1", "ok"),
+    rec("system", "cmp", "ca", "summary", { isCompactSummary: true, logicalParentUuid: "ca" }),
+    rec("user", "c2", "cmp", "after compaction"),
+  ]);
+  const t = await atlas.getTree("s-compact2");
+  assert.equal(t.nodes.filter((n) => !n.onLivePath).length, 0);
+});
+
+test("only the superseded side of a rewind is abandoned", async () => {
+  const d = mk("-Users-you-dev-rw2");
+  write(d, "s-rw2", [
+    rec("user", "r0", null, "root ask"),
+    rec("assistant", "ra", "r0", "reply"),
+    { ...rec("user", "oldQ", "ra", "the question I withdrew"), timestamp: "2020-01-01T00:00:00.000Z" },
+    { ...rec("user", "newQ", "ra", "the question I kept"), timestamp: "2030-01-01T00:00:00.000Z" },
+  ]);
+  const t = await atlas.getTree("s-rw2");
+  assert.equal(t.nodes.find((n) => n.id === "r0").onLivePath, true, "the shared ancestor is live");
+  assert.equal(t.nodes.find((n) => n.id === "newQ").onLivePath, true);
+  assert.equal(t.nodes.find((n) => n.id === "oldQ").onLivePath, false);
+});

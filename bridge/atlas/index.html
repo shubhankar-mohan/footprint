@@ -75,26 +75,40 @@
   }
   #head h2{margin:0;font:600 14px var(--sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
   #head .meta{font:11.5px var(--mono);color:var(--faint);white-space:nowrap;flex:0 0 auto}
-  #graphWrap{flex:1;overflow:auto;position:relative}
-  svg{display:block}
-  .edge{stroke:var(--edge);stroke-width:1.5;fill:none}
-  .edge.live{stroke:var(--work);stroke-width:2}
-  .node{cursor:pointer}
-  .node .dot{stroke:var(--panel);stroke-width:2}
-  .node .lbl{font:13px var(--sans);fill:var(--ink)}
-  .node .sub{font:11px var(--mono);fill:var(--faint)}
-  .node.live .lbl{fill:var(--ink)}
-  .node.sel .lbl{fill:var(--ink);font-weight:600}
-  .node.sel .dot{r:7;stroke:var(--work);stroke-width:2.5;opacity:1}
-  /* A raw browser focus ring on an SVG group reads as a bug; give focus and
-     selection a designed state instead. */
-  .node:focus{outline:none}
-  .node:focus .lbl{fill:var(--ink);text-decoration:underline}
-  .node.dead .dot{opacity:.62}
-  .node.dead .lbl{opacity:.5}
-  .node.dead .sub{opacity:.5}
-  .frontier{stroke:var(--needs);stroke-dasharray:4 3;stroke-width:1.5}
-  .frontierLbl{font:italic 11px var(--serif);fill:var(--needs)}
+  #graphWrap{flex:1;overflow:auto;position:relative;padding:22px 26px 60px}
+  #wires{position:absolute;inset:0;pointer-events:none;overflow:visible}
+  .edge{stroke:var(--edge);stroke-width:2;fill:none}
+  .edge.live{stroke:var(--work);stroke-width:2.5}
+  .card{
+    position:absolute;box-sizing:border-box;
+    background:var(--panel);border:1px solid var(--edge);border-left:3px solid var(--needs);
+    border-radius:9px;padding:11px 13px 10px;cursor:pointer;text-align:left;
+    transition:border-color .13s, transform .13s, box-shadow .13s;
+  }
+  .card:hover{border-color:var(--work);transform:translateY(-1px);box-shadow:0 3px 14px rgba(0,0,0,.14)}
+  .card:focus{outline:none;border-color:var(--work)}
+  .card[aria-selected=true]{
+    border-color:var(--work);border-left-color:var(--work);
+    box-shadow:0 0 0 2px color-mix(in srgb,var(--work) 34%,transparent);
+  }
+  .card .ask{
+    font:500 13px/1.42 var(--sans);color:var(--ink);
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .card .foot{display:flex;gap:9px;align-items:center;margin-top:8px;font:11px var(--mono);color:var(--faint)}
+  .card .pill{
+    background:var(--sub);border-radius:20px;padding:2px 8px;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px;
+  }
+  .card .n{color:var(--work);font-weight:600}
+  .card.dead{opacity:.52;border-left-color:var(--idle)}
+  .card .badge{margin-left:auto;font:600 9.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--idle)}
+  .card.frontierCard{border-top:2px dashed var(--needs)}
+  .card .fr{font:italic 10.5px var(--serif);color:var(--needs);display:block;margin-bottom:5px}
+  #sessActs{display:flex;gap:7px;flex:0 0 auto}
+  /* Same trap as #insp: display:flex outranks the [hidden] attribute. */
+  #sessActs[hidden]{display:none}
+  #head h2 .renamed{font:10px var(--mono);color:var(--faint);margin-left:7px;vertical-align:1px}
 
   /* ── inspector ───────────────────────────────────────────────────────── */
   #insp{
@@ -151,7 +165,14 @@
 <main>
   <div id="list" role="navigation" aria-label="Sessions"></div>
   <div id="stage">
-    <div id="head"><h2 id="title">Select a session</h2><span class="meta" id="meta"></span></div>
+    <div id="head">
+      <h2 id="title">Select a session</h2>
+      <span class="meta" id="meta"></span>
+      <span id="sessActs" hidden>
+        <button class="btn" id="aRename" title="Give this conversation a name you will recognise">Rename</button>
+        <button class="btn pri" id="aReply" title="Open a terminal that continues this conversation">Reply in terminal</button>
+      </span>
+    </div>
     <div id="graphWrap"><div class="empty"><div class="q">The map is quiet.</div><div>Pick a session on the left to see its shape.</div></div></div>
   </div>
   <aside id="insp" hidden>
@@ -218,69 +239,95 @@ function renderList() {
 }
 
 /* ── graph ────────────────────────────────────────────────────────────── */
-const COL_W = 170, ROW_H = 62, PAD = 30;
+const COL_W = 330, CARD_W = 300, ROW_GAP = 16, PAD = 4;
 
 function renderGraph(t) {
   TREE = t;
-  if (!t.ok) { $("#graphWrap").innerHTML = `<div class="empty">${esc(t.error)}</div>`; return; }
+  const wrap = $("#graphWrap");
+  if (!t.ok) { wrap.innerHTML = `<div class="empty">${esc(t.error)}</div>`; return; }
+  if (!t.nodes.length) {
+    wrap.innerHTML = `<div class="empty"><div class="q">Nothing was asked here.</div>
+      <div>This session has no prompts of your own yet.</div></div>`;
+    return;
+  }
 
-  // Lay out by depth (y) and branch lane (x). Siblings of a rewind get their own
-  // lane so an abandoned branch is visibly parallel, not hidden behind the live one.
-  const byId = new Map(t.nodes.map((n) => [n.id, n]));
+  // One lane per branch, so an abandoned rewind sits beside the live path
+  // rather than hidden behind it.
   const kids = new Map();
   for (const e of t.edges) {
     if (!kids.has(e.from)) kids.set(e.from, []);
     kids.get(e.from).push(e.to);
   }
+  const tos = new Set(t.edges.map((e) => e.to));
+  const roots = t.nodes.filter((n) => !tos.has(n.id));
   const lane = new Map();
-  let nextLane = 0;
-  const roots = t.nodes.filter((n) => !t.edges.some((e) => e.to === n.id));
+  let next = 0;
   const walk = (id, l) => {
     lane.set(id, l);
-    const ch = kids.get(id) || [];
-    ch.forEach((c, i) => walk(c, i === 0 ? l : ++nextLane));
+    (kids.get(id) || []).forEach((c, i) => walk(c, i === 0 ? l : ++next));
   };
-  roots.forEach((r) => walk(r.id, r === roots[0] ? 0 : ++nextLane));
+  roots.forEach((r, i) => walk(r.id, i === 0 ? 0 : ++next));
 
-  const maxLane = Math.max(0, ...lane.values());
-  const W = PAD * 2 + (maxLane + 1) * COL_W + 760;
-  const H = PAD * 2 + t.nodes.length * ROW_H;
-  const pos = new Map();
-  t.nodes.forEach((n, i) => pos.set(n.id, { x: PAD + (lane.get(n.id) || 0) * COL_W, y: PAD + i * ROW_H }));
+  const byId = new Map(t.nodes.map((n) => [n.id, n]));
+  const cards = [];
 
-  const parts = [`<svg width="${W}" height="${H}" role="img" aria-label="Conversation graph">`];
-  for (const e of t.edges) {
-    const a = pos.get(e.from), b = pos.get(e.to);
-    if (!a || !b) continue;
-    const live = byId.get(e.from)?.onLivePath && byId.get(e.to)?.onLivePath;
-    parts.push(`<path class="edge${live ? " live" : ""}" d="M${a.x},${a.y} C${a.x},${(a.y+b.y)/2} ${b.x},${(a.y+b.y)/2} ${b.x},${b.y}"/>`);
-  }
   for (const n of t.nodes) {
-    const p = pos.get(n.id);
-    const col = "var(--needs)"; // every node is something you asked
-    const dead = n.onLivePath ? "" : " dead";
-    if (n.frontier) {
-      parts.push(`<line class="frontier" x1="${PAD-14}" y1="${p.y-14}" x2="${W-40}" y2="${p.y-14}"/>`);
-      parts.push(`<text class="frontierLbl" x="${PAD-10}" y="${p.y-19}">context frontier — compacted above</text>`);
-    }
-    // Each node is something the user asked. The second line summarises what it
-    // cost — that is the shape of the work, without drawing every step of it.
-    const label = (n.preview || "(empty)").slice(0, 92);
+    const x = PAD + (lane.get(n.id) || 0) * COL_W;
     const r = n.reply || { tools: [], turns: 0 };
-    const bits = [];
-    if (r.turns) bits.push(`${r.turns} repl${r.turns === 1 ? "y" : "ies"}`);
-    if (r.tools.length) bits.push(r.tools.slice(0, 4).join(", ") + (r.tools.length > 4 ? "…" : ""));
-    const tools = bits.join("  ·  ");
-    parts.push(
-      `<g class="node${dead}${n.onLivePath ? " live" : ""}${n.id === SEL ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0" role="button" aria-label="You asked: ${esc(label)}">
-         <circle class="dot" cx="${p.x}" cy="${p.y}" r="6" fill="${col}"/>
-         <text class="lbl" x="${p.x + 16}" y="${p.y + 1}">${esc(label)}</text>
-         <text class="sub" x="${p.x + 16}" y="${p.y + 17}">${esc(tools)}</text>
-       </g>`
+    const turnBit = r.turns
+      ? `<span><span class="n">${r.turns}</span> repl${r.turns === 1 ? "y" : "ies"}</span>` : "";
+    const toolBit = r.tools.length
+      ? `<span class="pill">${esc(r.tools.slice(0, 3).join(", "))}${r.tools.length > 3 ? "…" : ""}</span>` : "";
+
+    cards.push(
+      `<button class="card${n.onLivePath ? "" : " dead"}${n.frontier ? " frontierCard" : ""}"
+               style="left:${x}px;width:${CARD_W}px"
+               data-id="${esc(n.id)}" aria-selected="${n.id === SEL}"
+               aria-label="You asked: ${esc((n.preview || "").slice(0, 90))}">
+         ${n.frontier ? '<span class="fr">&#8961; context frontier — compacted here</span>' : ""}
+         <span class="ask">${esc(n.preview || "(empty)")}</span>
+         <span class="foot">${turnBit}${toolBit}${n.onLivePath ? "" : '<span class="badge">abandoned</span>'}</span>
+       </button>`
     );
   }
-  parts.push("</svg>");
-  $("#graphWrap").innerHTML = parts.join("");
+
+  const maxLane = Math.max(0, ...lane.values());
+  const W = PAD * 2 + (maxLane + 1) * COL_W;
+
+  // Pass 1: put the cards in the DOM so the browser can lay the text out.
+  wrap.innerHTML =
+    `<div id="stack" style="position:relative;width:${W}px">
+       <svg id="wires" width="${W}" height="0"></svg>
+       ${cards.join("")}
+     </div>`;
+
+  // Pass 2: measure what the text actually became, then stack them. Estimating
+  // wrapped height from character count left cards overlapping each other.
+  const pos = new Map();
+  let y = PAD;
+  for (const n of t.nodes) {
+    const el = wrap.querySelector(`.card[data-id="${CSS.escape(n.id)}"]`);
+    if (!el) continue;
+    const h = el.offsetHeight;
+    const x = PAD + (lane.get(n.id) || 0) * COL_W;
+    el.style.top = `${y}px`;
+    pos.set(n.id, { x, y, h });
+    y += h + ROW_GAP;
+  }
+
+  // Pass 3: wire them together now that every position is known.
+  const wires = [];
+  for (const e of t.edges) {
+    const from = pos.get(e.from), to = pos.get(e.to);
+    if (!from || !to) continue;
+    const live = byId.get(e.from)?.onLivePath && byId.get(e.to)?.onLivePath;
+    const x1 = from.x + 18, y1 = from.y + from.h, x2 = to.x + 18, y2 = to.y;
+    wires.push(`<path class="edge${live ? " live" : ""}" d="M${x1},${y1} C${x1},${y1 + 14} ${x2},${y2 - 14} ${x2},${y2}"/>`);
+  }
+  const svg = wrap.querySelector("#wires");
+  svg.setAttribute("height", String(y));
+  svg.innerHTML = wires.join("");
+  wrap.querySelector("#stack").style.height = `${y}px`;
 }
 
 /* ── inspector ────────────────────────────────────────────────────────── */
@@ -292,7 +339,7 @@ async function select(id) {
   $("#iRole").textContent = "You asked";
   $("#iRole").style.color = "var(--needs)";
   $("#iRef").textContent = `node://${CURRENT}/${n.id}`;
-  document.querySelectorAll(".node").forEach((g) => g.classList.toggle("sel", g.dataset.id === id));
+  document.querySelectorAll(".card").forEach((c) => c.setAttribute("aria-selected", String(c.dataset.id === id)));
 
   const r = n.reply || { tools: [], turns: 0 };
   const cost = [r.turns ? `${r.turns} repl${r.turns === 1 ? "y" : "ies"}` : null,
@@ -313,10 +360,10 @@ async function select(id) {
 }
 
 async function openSession(id) {
-  CURRENT = id; SEL = null; $("#insp").hidden = true;
+  CURRENT = id; SEL = null; $("#insp").hidden = true; $("#sessActs").hidden = false;
   renderList();
   const s = SESSIONS.find((x) => x.id === id);
-  $("#title").textContent = s ? s.title : id;
+  setTitle(s);
   $("#graphWrap").innerHTML = `<div class="empty">Reading the session…</div>`;
   const t = await api(`/atlas/api/tree?id=${encodeURIComponent(id)}`);
   if (t.ok) {
@@ -331,6 +378,45 @@ async function openSession(id) {
 }
 
 /* ── search ───────────────────────────────────────────────────────────── */
+function setTitle(s) {
+  $("#title").innerHTML =
+    esc(s?.title || CURRENT || "Select a session") +
+    (s?.renamed ? '<span class="renamed">renamed</span>' : "");
+}
+
+$("#aRename").addEventListener("click", async () => {
+  const s = SESSIONS.find((x) => x.id === CURRENT);
+  const next = prompt("Name this conversation (blank restores the original):", s?.title || "");
+  if (next === null) return;
+  const r = await fetch("/atlas/api/rename", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session: CURRENT, name: next }),
+  }).then((x) => x.json());
+  if (!r.ok) return toast(r.error);
+  SESSIONS = (await api("/atlas/api/sessions")).sessions;
+  renderList();
+  setTitle(SESSIONS.find((x) => x.id === CURRENT));
+  toast(r.title ? `Renamed to “${r.title}”` : "Original name restored");
+});
+
+// "Reply" means continue the real conversation: a terminal running
+// `claude --resume <id>` in that session's own directory, so its context is
+// already loaded rather than re-explained.
+$("#aReply").addEventListener("click", async () => {
+  const s = SESSIONS.find((x) => x.id === CURRENT);
+  toast("Opening a terminal…");
+  const r = await fetch("/atlas/api/resume", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session: CURRENT, cwd: s?.cwd }),
+  }).then((x) => x.json());
+  if (r.ok) return toast("Continuing this conversation in your terminal");
+  if (r.command) {
+    await navigator.clipboard.writeText(r.command);
+    return toast("tmux not found — command copied to your clipboard");
+  }
+  toast(r.error || "Could not resume");
+});
+
 let searchTimer;
 $("#q").addEventListener("input", (e) => {
   clearTimeout(searchTimer);
@@ -359,12 +445,8 @@ $("#list").addEventListener("click", (e) => {
   openSession(id).then(() => { if (row.dataset.node) select(row.dataset.node); });
 });
 $("#graphWrap").addEventListener("click", (e) => {
-  const g = e.target.closest(".node");
-  if (g) select(g.dataset.id);
-});
-$("#graphWrap").addEventListener("keydown", (e) => {
-  const g = e.target.closest(".node");
-  if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); select(g.dataset.id); }
+  const c = e.target.closest(".card");
+  if (c) select(c.dataset.id);
 });
 
 $("#aRef").addEventListener("click", async () => {

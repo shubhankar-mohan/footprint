@@ -35,6 +35,11 @@ export const DISMISSED = path.join(CCBAR_DIR, "dismissed.json");
 // place we write.
 export const MARKS = path.join(CCBAR_DIR, "marks.json");
 
+// Session renames. Claude Code stores its own title inside the transcript, but
+// ~/.claude is read-only telemetry — so a user's rename lives here instead and
+// is layered over the derived title at read time.
+export const TITLES = path.join(CCBAR_DIR, "titles.json");
+
 // Claude Code's global settings + our backup of it.
 export const CLAUDE_DIR = path.join(HOME, ".claude");
 export const CLAUDE_SETTINGS = path.join(CLAUDE_DIR, "settings.json");
