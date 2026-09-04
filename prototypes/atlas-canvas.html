@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Footprint Atlas — Canvas</title>
+<style>
+  /* ── harbor tokens (docs/footprint-product-plan.md §2) ─────────────────
+     Three scales, deliberately short: five type steps, one 4px space scale,
+     three radii. Anything not on a scale is a bug. Graph geometry lives here
+     too so CSS and JS cannot disagree about it. */
+  :root{
+    --ground:#d3dfe7; --panel:#fff; --sub:#eef3f7; --edge:rgba(33,47,56,.13); --edge2:rgba(33,47,56,.07);
+    --ink:#1b2730; --muted:#5d707d; --faint:#67727c;
+    --work:#43617f; --needs:#9a4f12; --idle:#87a0ac; --idle-ink:#586e7a; --fork:#41785a; --crit:#c0503a;
+    /* --idle-ink and --fork are measured against the ground they actually sit
+       on, not against white: the abandoned badge sits on --sub, where the
+       lighter values fell to 4.27:1 and 3.97:1. */
+
+    --fs-xs:11px; --fs-sm:12px; --fs-base:13px; --fs-lg:15px; --fs-xl:17px;
+    --s0:2px; --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+    --r1:6px; --r2:10px; --r3:999px;
+
+    --col-w:330px; --card-w:300px; --row-gap:16px; --stack-pad:4px;
+    --list-w:340px; --insp-w:380px;
+
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+    --serif:ui-serif,"New York",Georgia,serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme=light]){
+      --ground:#181f26; --panel:#1e262e; --sub:#232c35; --edge:rgba(228,235,240,.13); --edge2:rgba(228,235,240,.07);
+      --ink:#e4ebf0; --muted:#98a5b0; --faint:#8d99a4;
+      --work:#7fa8cc; --needs:#e2a04e; --idle:#7f8f9c; --idle-ink:#93a5b1; --fork:#6fbf95; --crit:#e07a5f;
+    }
+  }
+
+  :root{ --card-w:290px; --col-gap:70px; --row-gap:52px; }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--ground);color:var(--ink);font:var(--fs-base)/1.5 var(--sans);
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden;
+  }
+  button{font:inherit;color:inherit;cursor:pointer}
+  .sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  :focus-visible{outline:2px solid var(--work);outline-offset:2px;border-radius:var(--r1)}
+
+  header{
+    display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);
+    border-bottom:1px solid var(--edge);background:var(--panel);flex:0 0 auto;z-index:4;
+  }
+  .brand{font:italic 400 var(--fs-xl)/1 var(--serif);letter-spacing:-.01em;white-space:nowrap;
+         display:flex;align-items:center;gap:var(--s2)}
+  .brand .logo{fill:currentColor;flex:0 0 auto;opacity:.92}
+  .brand b{font-style:normal;font-weight:600;font-family:var(--sans);font-size:var(--fs-sm);
+           color:var(--muted);margin-left:var(--s2);letter-spacing:.06em;text-transform:uppercase}
+  #q{flex:1;max-width:460px;padding:var(--s2) var(--s3);border:1px solid var(--edge);
+     border-radius:var(--r1);background:var(--sub);color:var(--ink);font:var(--fs-base) var(--sans)}
+  .stat{font:var(--fs-xs) var(--mono);color:var(--faint);white-space:nowrap}
+
+  main{flex:1;display:flex;min-height:0;position:relative}
+  #list{width:300px;flex:0 0 auto;overflow-y:auto;border-right:1px solid var(--edge);background:var(--panel);z-index:3}
+  .grp{font:italic 400 var(--fs-base)/1 var(--serif);color:var(--muted);
+       padding:var(--s3) var(--s3) var(--s1);position:sticky;top:0;background:var(--panel)}
+  .grp .n{font:600 var(--fs-xs) var(--sans);color:var(--faint);margin-left:var(--s1)}
+  .row{display:block;width:100%;text-align:left;border:0;background:none;
+       padding:var(--s2) var(--s3);border-bottom:1px solid var(--edge2)}
+  .row:hover{background:var(--sub)}
+  .row[aria-current=true]{background:var(--sub);box-shadow:inset 3px 0 0 var(--work)}
+  .row .t{font-weight:600;font-size:var(--fs-base);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .m{display:flex;gap:var(--s2);margin-top:2px;font:var(--fs-xs) var(--mono);color:var(--faint)}
+
+  /* ── the board ─────────────────────────────────────────────────────── */
+  #stage{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+  #bar{
+    padding:var(--s2) var(--s4);border-bottom:1px solid var(--edge);background:var(--panel);
+    display:flex;align-items:center;gap:var(--s3);flex:0 0 auto;z-index:2;
+  }
+  #bar h2{margin:0;font:600 var(--fs-lg) var(--sans);overflow:hidden;text-overflow:ellipsis;
+          white-space:nowrap;flex:1;min-width:0}
+  #bar .meta{font:var(--fs-xs) var(--mono);color:var(--faint);white-space:nowrap}
+  .tools{display:flex;gap:4px;align-items:center}
+  .tool{
+    border:1px solid var(--edge);background:var(--sub);border-radius:var(--r1);
+    width:30px;height:28px;display:grid;place-items:center;font:600 var(--fs-sm) var(--mono);
+  }
+  .tool.wide{width:auto;padding:0 10px;font-family:var(--sans)}
+  .tool:hover{border-color:var(--work)}
+  .zoomval{font:var(--fs-xs) var(--mono);color:var(--faint);min-width:46px;text-align:right;
+           font-variant-numeric:tabular-nums}
+
+  #viewport{
+    flex:1;position:relative;overflow:hidden;cursor:grab;
+    background:var(--ground);
+    /* the chart-paper ground. It scrolls and scales with the board, which is
+       what makes panning legible — without it the cards slide over nothing. */
+    background-image:radial-gradient(circle, var(--edge) 1px, transparent 1px);
+    background-size:26px 26px;
+  }
+  #viewport.grabbing{cursor:grabbing}
+  #world{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+  #wires{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
+  .edge{stroke:var(--edge);stroke-width:2;fill:none}
+  .edge.live{stroke:var(--work);stroke-width:2.5}
+
+  .card{
+    position:absolute;width:var(--card-w);box-sizing:border-box;text-align:left;
+    background:var(--panel);border:1px solid var(--edge);border-left:3px solid var(--edge);
+    border-radius:var(--r2);padding:var(--s3);cursor:pointer;
+    transition:border-color .13s, box-shadow .13s;
+    box-shadow:0 1px 2px rgba(20,30,40,.05);
+  }
+  .card:hover{border-color:var(--work);box-shadow:0 4px 16px -4px rgba(20,30,40,.28)}
+  .card[aria-current=true]{
+    border-color:var(--work);border-left-color:var(--work);
+    box-shadow:0 0 0 2px color-mix(in srgb,var(--work) 40%,transparent), 0 6px 20px -6px rgba(20,30,40,.3);
+  }
+  .card .ask{font:500 var(--fs-base)/1.42 var(--sans);color:var(--ink);
+             display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .card .foot{display:flex;gap:var(--s2);align-items:center;margin-top:var(--s2);
+              font:var(--fs-xs) var(--mono);color:var(--faint)}
+  .card .foot>span:first-child{white-space:nowrap;flex:0 0 auto}
+  .card .pill{background:var(--sub);border-radius:var(--r3);padding:var(--s0) var(--s2);
+              color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
+  .card .n{color:var(--work);font-weight:600}
+  .card.dead{background:var(--sub);border-left-color:var(--idle);box-shadow:none}
+  .card.dead .ask{color:var(--muted);font-weight:400}
+  .card .badge{margin-left:auto;font:600 var(--fs-xs) var(--sans);letter-spacing:.06em;
+               text-transform:uppercase;color:var(--idle-ink)}
+  .card.frontierCard{border-top:2px dashed var(--needs)}
+  .card .fr{font:italic var(--fs-xs) var(--serif);color:var(--needs);display:block;margin-bottom:var(--s1)}
+
+  /* Segment labels sit above each compaction band and counter-scale, so they
+     stay readable when the board is zoomed out to fit. */
+  .seghd{
+    position:absolute;transform-origin:0 100%;white-space:nowrap;pointer-events:none;
+    display:flex;flex-direction:column;gap:2px;
+  }
+  .seghd b{font:600 var(--fs-sm) var(--sans);color:var(--ink);letter-spacing:.01em}
+  .seghd b span{color:var(--faint);font-weight:400}
+  .seghd i{font:italic 400 var(--fs-xs) var(--serif);color:var(--muted)}
+  /* At fit the full label is wider than the segment it names, so the segments
+     collide. Zoomed out you get the number alone; the words come back as soon
+     as there is room for them. */
+  .seghd .segnum{display:none;font:600 20px var(--serif);font-style:italic;color:var(--muted)}
+  #world.lod .seghd .segnum{display:block}
+  #world.lod .seghd .segfull,
+  #world.lod .seghd i{display:none}
+  .segline{
+    position:absolute;width:0;pointer-events:none;
+    border-left:1px dashed var(--edge);
+  }
+
+  /* Level of detail: below 50% the text is under 7px, so drop it and let the
+     blocks carry the shape. */
+  #world.lod .card .ask,
+  #world.lod .card .foot,
+  #world.lod .card .fr{visibility:hidden}
+  #world.lod .card{box-shadow:none;background:color-mix(in srgb,var(--work) 22%,var(--panel))}
+  #world.lod .card.dead{background:var(--sub)}
+  #world.lod .card.frontierCard{background:color-mix(in srgb,var(--needs) 26%,var(--panel))}
+  #world.lod .card[aria-current=true]{background:var(--work)}
+
+  /* ── minimap ───────────────────────────────────────────────────────── */
+  #mini{
+    position:absolute;right:var(--s4);bottom:calc(var(--s4) + 18px);width:168px;height:118px;
+    background:color-mix(in srgb,var(--panel) 92%,transparent);
+    border:1px solid var(--edge);border-radius:var(--r1);z-index:3;cursor:pointer;
+    box-shadow:0 4px 16px -6px rgba(0,0,0,.35);
+  }
+  #mini canvas{display:block;width:100%;height:100%;border-radius:var(--r1)}
+  #minilabel{
+    position:absolute;left:0;right:0;bottom:-16px;text-align:center;
+    font:600 9px var(--sans);letter-spacing:.09em;
+    text-transform:uppercase;color:var(--faint);pointer-events:none;
+  }
+  #hint{
+    position:absolute;left:var(--s4);bottom:var(--s4);z-index:3;
+    font:var(--fs-xs) var(--mono);color:var(--faint);
+    background:color-mix(in srgb,var(--panel) 88%,transparent);
+    border:1px solid var(--edge2);border-radius:var(--r1);padding:6px 10px;
+  }
+  #hint kbd{font:inherit;color:var(--ink);background:var(--sub);border:1px solid var(--edge);
+            border-radius:3px;padding:0 4px}
+
+  aside#insp{
+    width:360px;flex:0 0 auto;border-left:1px solid var(--edge);background:var(--panel);
+    display:flex;flex-direction:column;overflow:hidden;z-index:3;
+  }
+  aside#insp[hidden]{display:none}
+  #insp .hd{padding:var(--s3) var(--s4);border-bottom:1px solid var(--edge)}
+  #insp .role{font:600 var(--fs-xs) var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--work)}
+  #insp .ref{font:var(--fs-xs) var(--mono);color:var(--faint);word-break:break-all;margin-top:var(--s1)}
+  #insp .body{padding:var(--s3) var(--s4);overflow-y:auto;flex:1;font-size:var(--fs-base);line-height:1.55}
+  #insp .ask{white-space:pre-wrap;padding-left:var(--s3);border-left:3px solid var(--work);color:var(--muted)}
+  #insp .answerHd{margin:var(--s4) 0 var(--s1);font:600 var(--fs-xs) var(--sans);letter-spacing:.08em;
+                  text-transform:uppercase;color:var(--work)}
+  #insp .answer{white-space:pre-wrap;color:var(--ink)}
+
+  .empty{padding:var(--s6) var(--s5);text-align:center;color:var(--muted)}
+  .empty .q{font:italic 400 var(--fs-xl) var(--serif);margin-bottom:var(--s1);color:var(--ink)}
+  .empty.bad .q{color:var(--crit)}
+
+  @media (prefers-reduced-motion:reduce){
+    *{transition-duration:.01ms !important;animation-duration:.01ms !important}
+  }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">
+    <svg class="logo" viewBox="0 0 64 64" width="19" height="19" aria-hidden="true"><ellipse cx="13.4" cy="30.6" rx="6.1" ry="7.8" transform="rotate(-24 13.4 30.6)"/><ellipse cx="25.3" cy="19.4" rx="6.6" ry="8.4" transform="rotate(-9 25.3 19.4)"/><ellipse cx="38.7" cy="19.4" rx="6.6" ry="8.4" transform="rotate(9 38.7 19.4)"/><ellipse cx="50.6" cy="30.6" rx="6.1" ry="7.8" transform="rotate(24 50.6 30.6)"/><path d="M32 33.4c6.6 0 12.4 3 14.4 7.7 1.9 4.4.2 9.2-3.6 12.2-2.6 2.1-5.2 2.6-7.4 3.4-1.9.7-2.6 1.6-3.4 1.6s-1.5-.9-3.4-1.6c-2.2-.8-4.8-1.3-7.4-3.4-3.8-3-5.5-7.8-3.6-12.2 2-4.7 7.8-7.7 14.4-7.7Z"/></svg>
+    <span>Footprint<b>Atlas</b></span>
+  </span>
+  <input id="q" type="search" placeholder="Search every session…  (⌘K)" aria-label="Search all sessions">
+  <span class="stat" id="stat" role="status">loading…</span>
+</header>
+
+<main>
+  <div id="list" role="navigation" aria-label="Sessions"></div>
+
+  <div id="stage">
+    <div id="bar">
+      <h2 id="title">Select a session</h2>
+      <span class="meta" id="meta"></span>
+      <span class="tools">
+        <button class="tool wide" id="tFit" title="Frame the whole session (0)">Fit</button>
+        <button class="tool" id="tOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+        <span class="zoomval" id="zoomVal">100%</span>
+        <button class="tool" id="tIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      </span>
+    </div>
+
+    <div id="viewport" role="application" aria-label="Session board. Arrow keys move between asks.">
+      <div id="world">
+        <svg id="wires" aria-hidden="true"></svg>
+      </div>
+      <div id="hint"><kbd>drag</kbd> pan · <kbd>scroll</kbd> zoom · <kbd>↑↓←→</kbd> move · <kbd>0</kbd> fit</div>
+      <div id="mini" role="button" tabindex="0" aria-label="Minimap. Click to jump.">
+        <canvas id="miniC" width="336" height="236"></canvas>
+        <span id="minilabel">the whole session</span>
+      </div>
+    </div>
+  </div>
+
+  <aside id="insp" hidden aria-label="Selected ask">
+    <div class="hd"><div class="role" id="iRole"></div><div class="ref" id="iRef"></div></div>
+    <div class="body" id="iBody"></div>
+  </aside>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ago = (ms) => { const s=(Date.now()-ms)/1000;
+  return s<60?"now":s<3600?Math.round(s/60)+"m":s<86400?Math.round(s/3600)+"h":Math.round(s/86400)+"d"; };
+
+let SESSIONS=[], CURRENT=null, TREE=null, SEL=null, NODES=[];
+
+async function api(p){
+  let r; try { r = await fetch(p); } catch { throw new Error("The bridge is not responding."); }
+  if(!r.ok) throw new Error(`The bridge returned ${r.status}`);
+  return r.json();
+}
+
+/* ── the board's coordinate system ───────────────────────────────────────
+   world → screen is  p*k + t.  Everything below is that one equation. */
+const CAM = { k:1, tx:0, ty:0 };
+const MIN_K = 0.12, MAX_K = 2.2;
+const world = () => $("#world");
+
+function applyCam(){
+  world().style.transform = `translate(${CAM.tx}px, ${CAM.ty}px) scale(${CAM.k})`;
+  $("#zoomVal").textContent = Math.round(CAM.k*100) + "%";
+  applyLOD();
+  drawMini();
+}
+function zoomAt(sx, sy, nextK){
+  const k = Math.max(MIN_K, Math.min(MAX_K, nextK));
+  // keep the world point under the cursor pinned
+  CAM.tx = sx - (sx - CAM.tx) * (k / CAM.k);
+  CAM.ty = sy - (sy - CAM.ty) * (k / CAM.k);
+  CAM.k = k;
+  applyCam();
+}
+function bbox(){
+  if(!NODES.length) return null;
+  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+  for(const n of NODES){ x1=Math.min(x1,n.x); y1=Math.min(y1,n.y);
+                         x2=Math.max(x2,n.x+n.w); y2=Math.max(y2,n.y+n.h); }
+  return {x1,y1,x2,y2,w:x2-x1,h:y2-y1};
+}
+function fit(pad=70){
+  const b=bbox(); if(!b) return;
+  const vp=$("#viewport").getBoundingClientRect();
+  const k=Math.max(MIN_K, Math.min(MAX_K, Math.min((vp.width-pad*2)/b.w, (vp.height-pad*2)/b.h)));
+  CAM.k=k;
+  CAM.tx = (vp.width  - b.w*k)/2 - b.x1*k;
+  CAM.ty = (vp.height - b.h*k)/2 - b.y1*k;
+  applyCam();
+}
+function centerOn(n, k){
+  const vp=$("#viewport").getBoundingClientRect();
+  if(k) CAM.k=Math.max(MIN_K,Math.min(MAX_K,k));
+  CAM.tx = vp.width/2  - (n.x + n.w/2)*CAM.k;
+  CAM.ty = vp.height/2 - (n.y + n.h/2)*CAM.k;
+  applyCam();
+}
+/* Pan the smallest amount that brings a node fully into view. Re-centring on
+   every arrow press makes the board feel like it is yanking you around. */
+function nudgeInto(n){
+  const vp=$("#viewport").getBoundingClientRect(), m=60;
+  const sx=n.x*CAM.k+CAM.tx, sy=n.y*CAM.k+CAM.ty, sw=n.w*CAM.k, sh=n.h*CAM.k;
+  let dx=0, dy=0;
+  if(sx<m) dx=m-sx; else if(sx+sw>vp.width-m) dx=(vp.width-m)-(sx+sw);
+  if(sy<m) dy=m-sy; else if(sy+sh>vp.height-m) dy=(vp.height-m)-(sy+sh);
+  if(dx||dy){ CAM.tx+=dx; CAM.ty+=dy; applyCam(); }
+}
+
+/* ── layout ──────────────────────────────────────────────────────────────
+   A real tree, not a stack: children hang below their parent, and every extra
+   branch takes a fresh column so two subtrees can never collide. On a canvas
+   width is free, which is the whole reason this shape works here. */
+function layout(t){
+  const kids=new Map();
+  for(const e of t.edges){ if(!kids.has(e.from)) kids.set(e.from,[]); kids.get(e.from).push(e.to); }
+  const tos=new Set(t.edges.map(e=>e.to));
+  const roots=t.nodes.filter(n=>!tos.has(n.id));
+  const byId=new Map(t.nodes.map(n=>[n.id,n]));
+  const cs=getComputedStyle(document.documentElement);
+  const CARD_W=parseFloat(cs.getPropertyValue("--card-w"));
+  const COL_GAP=parseFloat(cs.getPropertyValue("--col-gap"));
+  const ROW_GAP=parseFloat(cs.getPropertyValue("--row-gap"));
+  const COL=CARD_W+COL_GAP, SEG_GAP=110;
+
+  /* A long session is not usually branched — it is COMPACTED. Every compaction
+     re-roots the chain, so what looks like four parallel branches is really four
+     sequential segments of one conversation. Laying them out as anonymous
+     columns says "you forked four times", which is a lie. Each root therefore
+     becomes a labelled segment, laid left to right in the order they happened,
+     and real forks branch inside their own segment. */
+  const segs=[];
+  for(const r of roots){
+    const cols=new Map(); let maxCol=0; const order=[];
+    const walk=(id,c)=>{ cols.set(id,c); order.push(id);
+      (kids.get(id)||[]).forEach((k,i)=> walk(k, i===0 ? c : ++maxCol)); };
+    walk(r.id,0);
+    segs.push({root:r, cols, order, width:(maxCol+1)*COL-COL_GAP, forks:maxCol});
+  }
+  let ox=0;
+  for(const sg of segs){ sg.ox=ox; ox += sg.width + SEG_GAP; }
+
+  const w=world();
+  w.querySelectorAll(".card,.seghd,.segline").forEach(e=>e.remove());
+  const frag=document.createDocumentFragment();
+  const els=new Map();
+  for(const sg of segs){
+    for(const id of sg.order){
+      const n=byId.get(id); if(!n) continue;
+      const r=n.reply||{tools:[],turns:0};
+      const b=document.createElement("button");
+      b.className="card"+(n.onLivePath?"":" dead")+(n.frontier?" frontierCard":"");
+      b.dataset.id=n.id; b.tabIndex=-1; b.setAttribute("aria-current","false");
+      b.style.left=(sg.ox+sg.cols.get(id)*COL)+"px";
+      b.innerHTML =
+        `<span class="sr">You asked:</span>`+
+        (n.frontier?'<span class="fr">&#8961; carried over from the last segment</span>':"")+
+        `<span class="ask">${esc(n.preview||"(empty)")}</span>`+
+        `<span class="foot">`+
+          (r.turns?`<span><span class="n">${r.turns}</span> repl${r.turns===1?"y":"ies"}</span>`:"")+
+          (r.tools.length?`<span class="pill">${esc(r.tools.slice(0,2).join(", "))}${r.tools.length>2?"…":""}</span>`:"")+
+          (n.onLivePath?"":'<span class="badge">abandoned</span>')+
+        `</span>`;
+      frag.appendChild(b); els.set(id,b);
+    }
+  }
+  w.appendChild(frag);
+
+  const H=new Map();
+  for(const [id,el] of els) H.set(id, el.offsetHeight);
+  const pos=new Map();
+  const place=(id,y)=>{
+    const h=H.get(id)||90;
+    pos.set(id,{y,h});
+    for(const kid of (kids.get(id)||[])) place(kid, y+h+ROW_GAP);
+  };
+  for(const sg of segs) place(sg.root.id, 0);
+
+  NODES=[];
+  let gi=0;
+  for(const sg of segs) for(const id of sg.order){
+    const el=els.get(id), p=pos.get(id); if(!el||!p) continue;
+    el.style.top=p.y+"px";
+    NODES.push({id, x:sg.ox+sg.cols.get(id)*COL, y:p.y, w:CARD_W, h:p.h, el,
+                live:!!byId.get(id)?.onLivePath, order:gi++});
+  }
+
+  // segment labels, counter-scaled so they stay readable at any zoom
+  segs.forEach((sg,i)=>{
+    const hd=document.createElement("div");
+    hd.className="seghd";
+    hd.style.left=sg.ox+"px"; hd.style.top="-46px";
+    const n=segs.length;
+    hd.innerHTML=
+      `<b class="segnum">${i+1}</b>`+
+      `<b class="segfull">Segment ${i+1}<span>/${n}</span></b>`+
+      (i? `<i>picked up after a compaction</i>` : `<i>where the session began</i>`);
+    w.appendChild(hd);
+    if(i){
+      const ln=document.createElement("div");
+      ln.className="segline";
+      ln.style.left=(sg.ox-SEG_GAP/2)+"px"; ln.style.top="-46px";
+      w.appendChild(ln);
+    }
+  });
+
+  const b=bbox();
+  const svg=$("#wires");
+  svg.setAttribute("width",(b.x2+60)+""); svg.setAttribute("height",(b.y2+60)+"");
+  const paths=[];
+  for(const e of t.edges){
+    const f=NODES.find(n=>n.id===e.from), c=NODES.find(n=>n.id===e.to);
+    if(!f||!c) continue;
+    const live=byId.get(e.from)?.onLivePath && byId.get(e.to)?.onLivePath;
+    const x1=f.x+f.w/2, y1=f.y+f.h, x2=c.x+c.w/2, y2=c.y, m=(y2-y1)/2;
+    paths.push(`<path class="edge${live?" live":""}" d="M${x1},${y1} C${x1},${y1+m} ${x2},${y2-m} ${x2},${y2}"/>`);
+  }
+  svg.innerHTML=paths.join("");
+  SEGLINES=segs.length;
+}
+let SEGLINES=0;
+
+/* Level of detail. At fit, a 13px ask renders at under 4px — noise. Below the
+   threshold the cards become plain blocks and the board reads as a map of the
+   session's shape, which is the only thing legible at that size anyway. */
+function applyLOD(){
+  const w=world();
+  w.classList.toggle("lod", CAM.k < 0.5);
+  const inv = Math.min(1/CAM.k, 2.0);
+  for(const hd of w.querySelectorAll(".seghd")) hd.style.transform = `scale(${inv})`;
+  const b=bbox();
+  if(b) for(const ln of w.querySelectorAll(".segline")) ln.style.height=(b.y2+80)+"px";
+}
+
+/* ── minimap ─────────────────────────────────────────────────────────── */
+function drawMini(){
+  const c=$("#miniC"), g=c.getContext("2d");
+  g.clearRect(0,0,c.width,c.height);
+  const b=bbox(); if(!b) return;
+  const pad=10, s=Math.min((c.width-pad*2)/b.w, (c.height-pad*2)/b.h);
+  const ox=(c.width-b.w*s)/2-b.x1*s, oy=(c.height-b.h*s)/2-b.y1*s;
+  const css=getComputedStyle(document.documentElement);
+  const work=css.getPropertyValue("--work").trim();
+  const idle=css.getPropertyValue("--idle").trim();
+  for(const n of NODES){
+    g.fillStyle = n.id===SEL ? work : (n.live ? work : idle);
+    g.globalAlpha = n.id===SEL ? 1 : (n.live ? .55 : .3);
+    g.fillRect(ox+n.x*s, oy+n.y*s, Math.max(2,n.w*s), Math.max(2,n.h*s));
+  }
+  g.globalAlpha=1;
+  const vp=$("#viewport").getBoundingClientRect();
+  const vx=(-CAM.tx/CAM.k), vy=(-CAM.ty/CAM.k), vw=vp.width/CAM.k, vh=vp.height/CAM.k;
+  g.strokeStyle=css.getPropertyValue("--ink").trim(); g.globalAlpha=.5; g.lineWidth=1.5;
+  g.strokeRect(ox+vx*s, oy+vy*s, vw*s, vh*s);
+  g.globalAlpha=1;
+  c._m={ox,oy,s};
+}
+
+/* ── selection ───────────────────────────────────────────────────────── */
+async function select(id, opts={}){
+  SEL=id;
+  const n=TREE?.nodes.find(x=>x.id===id); if(!n) return;
+  for(const m of NODES) m.el.setAttribute("aria-current", String(m.id===id));
+  for(const m of NODES) m.el.tabIndex = m.id===id ? 0 : -1;
+  $("#insp").hidden=false;
+  $("#iRole").textContent="You asked";
+  $("#iRef").textContent=`node://${CURRENT}/${id}`;
+  const r=n.reply||{tools:[],turns:0};
+  const cost=[r.turns?`${r.turns} repl${r.turns===1?"y":"ies"}`:null,
+              r.tools.length?r.tools.join(", "):null].filter(Boolean).join("  ·  ");
+  const paint=(ask,ans)=>{ $("#iBody").innerHTML=
+    `<div class="ask">${esc(ask)}</div>`+
+    `<div class="answerHd">Claude${cost?` <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--faint)">${esc(cost)}</span>`:""}</div>`+
+    `<div class="answer">${esc(ans)||"<em>no reply yet</em>"}</div>`; };
+  paint(n.preview||"…", r.text||"");
+  const m=NODES.find(x=>x.id===id);
+  if(m && !opts.noPan) nudgeInto(m);
+  drawMini();
+  try{
+    const full=await api(`/atlas/api/node?session=${encodeURIComponent(CURRENT)}&uuid=${encodeURIComponent(id)}`);
+    if(SEL===id && full.ok) paint(full.text||"(empty)", r.text||"");
+  }catch{}
+}
+
+/* ── keyboard: same roving model as the shipped Atlas ─────────────────── */
+function move(dir){
+  if(!NODES.length) return;
+  const cur=NODES.find(n=>n.id===SEL) || NODES[0];
+  let target=null;
+  if(dir==="next"||dir==="prev"){
+    const i=NODES.indexOf(cur);
+    target=NODES[dir==="next"?Math.min(i+1,NODES.length-1):Math.max(i-1,0)];
+  } else {
+    const wantRight = dir==="right";
+    let best=null,score=1e12;
+    for(const n of NODES){
+      if(n===cur) continue;
+      if(wantRight ? n.x<=cur.x : n.x>=cur.x) continue;
+      const s=Math.abs(n.x-cur.x)+Math.abs(n.y-cur.y)*2.2;
+      if(s<score){score=s;best=n;}
+    }
+    target=best;
+  }
+  if(!target) return;
+  select(target.id);
+  target.el.focus({preventScroll:true});
+}
+
+$("#viewport").addEventListener("keydown",(e)=>{
+  const map={ArrowDown:"next",ArrowUp:"prev",ArrowRight:"right",ArrowLeft:"left"};
+  if(map[e.key]){ e.preventDefault(); move(map[e.key]); return; }
+  if(e.key==="0"){ e.preventDefault(); fit(); }
+  if(e.key==="+"||e.key==="="){ e.preventDefault(); const v=$("#viewport").getBoundingClientRect(); zoomAt(v.width/2,v.height/2,CAM.k*1.25); }
+  if(e.key==="-"||e.key==="_"){ e.preventDefault(); const v=$("#viewport").getBoundingClientRect(); zoomAt(v.width/2,v.height/2,CAM.k/1.25); }
+});
+
+/* ── pan & zoom ──────────────────────────────────────────────────────── */
+const vp=$("#viewport");
+let drag=null;
+vp.addEventListener("pointerdown",(e)=>{
+  if(e.target.closest(".card")||e.target.closest("#mini")) return;
+  drag={x:e.clientX,y:e.clientY,tx:CAM.tx,ty:CAM.ty,id:e.pointerId};
+  vp.setPointerCapture(e.pointerId); vp.classList.add("grabbing");
+});
+vp.addEventListener("pointermove",(e)=>{
+  if(!drag||e.pointerId!==drag.id) return;
+  CAM.tx=drag.tx+(e.clientX-drag.x); CAM.ty=drag.ty+(e.clientY-drag.y); applyCam();
+});
+const endDrag=(e)=>{ if(drag&&e.pointerId===drag.id){ drag=null; vp.classList.remove("grabbing"); } };
+vp.addEventListener("pointerup",endDrag); vp.addEventListener("pointercancel",endDrag);
+
+vp.addEventListener("wheel",(e)=>{
+  e.preventDefault();
+  const r=vp.getBoundingClientRect(), sx=e.clientX-r.left, sy=e.clientY-r.top;
+  // A trackpad pinch arrives as ctrlKey+wheel; a two-finger scroll should pan.
+  if(e.ctrlKey||e.metaKey){ zoomAt(sx,sy,CAM.k*Math.exp(-e.deltaY*0.01)); }
+  else { CAM.tx-=e.deltaX; CAM.ty-=e.deltaY; applyCam(); }
+},{passive:false});
+
+vp.addEventListener("click",(e)=>{
+  const c=e.target.closest(".card");
+  if(c) select(c.dataset.id,{noPan:true});
+});
+
+$("#tFit").addEventListener("click",()=>fit());
+$("#tIn").addEventListener("click",()=>{const r=vp.getBoundingClientRect();zoomAt(r.width/2,r.height/2,CAM.k*1.3);});
+$("#tOut").addEventListener("click",()=>{const r=vp.getBoundingClientRect();zoomAt(r.width/2,r.height/2,CAM.k/1.3);});
+
+$("#mini").addEventListener("click",(e)=>{
+  const c=$("#miniC"); if(!c._m) return;
+  const r=c.getBoundingClientRect();
+  const mx=(e.clientX-r.left)*(c.width/r.width), my=(e.clientY-r.top)*(c.height/r.height);
+  const {ox,oy,s}=c._m;
+  const wx=(mx-ox)/s, wy=(my-oy)/s;
+  const v=vp.getBoundingClientRect();
+  CAM.tx=v.width/2-wx*CAM.k; CAM.ty=v.height/2-wy*CAM.k; applyCam();
+});
+
+/* ── sessions ────────────────────────────────────────────────────────── */
+function renderList(){
+  const byProj=new Map();
+  for(const s of SESSIONS){ (byProj.get(s.project) ?? byProj.set(s.project,[]).get(s.project)).push(s); }
+  const out=[];
+  for(const [proj,rows] of byProj){
+    out.push(`<div class="grp">${esc(proj)}<span class="n">${rows.length}</span></div>`);
+    for(const s of rows) out.push(
+      `<button class="row" data-id="${esc(s.id)}" aria-current="${s.id===CURRENT}">
+         <span class="t">${esc(s.title)}</span>
+         <span class="m"><span>${s.turns} turns</span>${s.branches?`<span style="color:var(--fork)">⑂ ${s.branches}</span>`:""}<span style="margin-left:auto">${ago(s.updatedAt)}</span></span>
+       </button>`);
+  }
+  $("#list").innerHTML=out.join("");
+}
+
+async function openSession(id){
+  CURRENT=id; SEL=null; $("#insp").hidden=true; renderList();
+  const s=SESSIONS.find(x=>x.id===id);
+  $("#title").textContent=s?.title||id;
+  try{
+    const t=await api(`/atlas/api/tree?id=${encodeURIComponent(id)}`);
+    if(!t.ok||!t.nodes.length){ $("#meta").textContent=""; NODES=[]; layout({nodes:[],edges:[]}); return; }
+    TREE=t;
+    const off=t.nodes.length-t.nodes.filter(n=>n.onLivePath).length;
+    $("#meta").textContent=`${t.nodes.length} asks · ${t.session.turns} turns`+(off?` · ${off} abandoned`:"");
+    layout(t);
+    fit();
+  }catch(e){
+    $("#meta").textContent="";
+    $("#world").innerHTML=`<div class="empty bad" style="width:420px"><div class="q">Could not open this session.</div><div>${esc(e.message)}</div></div>`;
+  }
+}
+
+$("#list").addEventListener("click",(e)=>{
+  const r=e.target.closest(".row"); if(r) openSession(r.dataset.id);
+});
+addEventListener("keydown",(e)=>{ if((e.metaKey||e.ctrlKey)&&e.key==="k"){e.preventDefault();$("#q").focus();} });
+addEventListener("resize",()=>drawMini());
+
+(async()=>{
+  try{
+    const d=await api("/atlas/api/sessions");
+    SESSIONS=d.sessions||[];
+    const turns=SESSIONS.reduce((n,s)=>n+s.turns,0);
+    $("#stat").textContent=`${d.total} sessions · ${turns.toLocaleString()} turns`;
+    renderList();
+  }catch(e){
+    $("#stat").textContent="cannot reach the bridge";
+    $("#list").innerHTML=`<div class="empty bad"><div class="q">Could not load.</div><div>${esc(e.message)}</div></div>`;
+  }
+})();
+</script>
+</body>
+</html>
