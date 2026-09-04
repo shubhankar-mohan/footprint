@@ -1,14 +1,14 @@
 import SwiftUI
 import CCBarCore
 
-// The menu-bar glyph: a monochrome footprint (auto-tinted by macOS) with a small
-// colored state dot, so color is never the only signal.
+// The menu-bar glyph: the Footprint mark as a template image (auto-tinted by
+// macOS) with a small colored state dot, so color is never the only signal.
 struct MenuBarLabel: View {
   @ObservedObject var model: AppModel
   var body: some View {
     let agg = model.snapshot.aggregate
     HStack(spacing: 3) {
-      Image(systemName: "pawprint.fill")
+      Brand.mark(15)
         .foregroundStyle(model.connected ? Color.primary : Color.secondary)
         .overlay(alignment: .topTrailing) {
           Circle()

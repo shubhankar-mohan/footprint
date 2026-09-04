@@ -28,6 +28,17 @@ cp "$BUILT" "$APP/Contents/MacOS/$EXEC"
 cp -R ../bridge/server.js ../bridge/mcp-server.mjs ../bridge/lib ../bridge/hooks ../bridge/scripts ../bridge/atlas ../bridge/package.json \
   "$APP/Contents/Resources/bridge/"
 
+# Brand assets. The .icns is what Finder and the Dock show; the MenuBarIcon PNGs
+# are template images the status bar tints itself. Both are optional at build
+# time — Brand.swift falls back to an SF Symbol — but ship them when present.
+if [ -f ../brand/Footprint.icns ]; then
+  cp ../brand/Footprint.icns "$APP/Contents/Resources/Footprint.icns"
+fi
+for scale in "" "@2x" "@3x"; do
+  src="../brand/menubar/MenuBarIcon${scale}.png"
+  [ -f "$src" ] && cp "$src" "$APP/Contents/Resources/MenuBarIcon${scale}.png"
+done
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -39,6 +50,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>
+  <key>CFBundleIconFile</key><string>Footprint</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
 </dict></plist>

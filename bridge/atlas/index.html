@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Footprint Atlas</title>
+<!-- Inlined: the bridge serves this one file and nothing beside it. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2214%22%20fill%3D%22%23E7DAC6%22%2F%3E%3Cg%20fill%3D%22%2326333F%22%20transform%3D%22translate%2832%2033%29%20rotate%28-7%29%20scale%28.8%29%20translate%28-32.5%20-33%29%22%3E%3Cpath%20d%3D%22M21%2027C21%2020.5%2026.5%2017%2032.5%2017%2039.5%2017%2045%2021.5%2045%2028c0%205.5-2.5%209.5-4.5%2014-1.5%203.5-6.5%204.5-10%202.5C26.5%2042%2024.5%2039%2022.8%2035.5%2021.5%2032.5%2021%2030%2021%2027Z%22%2F%3E%3Cpath%20d%3D%22M28.2%2048.8c4.2-1.6%209%20.5%209.9%204.8.9%204.3-2.9%207.6-6.9%207-3.8-.6-6-4-5.4-7.4.3-2%201.2-3.6%202.4-4.4Z%22%2F%3E%3Ccircle%20cx%3D%2218.6%22%20cy%3D%2214.2%22%20r%3D%224.3%22%2F%3E%3Ccircle%20cx%3D%2227.2%22%20cy%3D%229.6%22%20r%3D%223.3%22%2F%3E%3Ccircle%20cx%3D%2234.6%22%20cy%3D%228.8%22%20r%3D%223%22%2F%3E%3Ccircle%20cx%3D%2241%22%20cy%3D%2210.4%22%20r%3D%222.7%22%2F%3E%3Ccircle%20cx%3D%2246.2%22%20cy%3D%2214%22%20r%3D%222.3%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
 <style>
   /* ── harbor tokens (docs/footprint-product-plan.md §2) ─────────────────
      Three scales, deliberately short: five type steps, one 4px space scale,
@@ -60,7 +62,13 @@
   }
   /* The product is Footprint; Atlas is the room you are standing in. The name
      therefore carries the serif and the weight, not the room label. */
-  .brand{font:italic 400 var(--fs-xl)/1 var(--serif);letter-spacing:-.01em;white-space:nowrap}
+  .brand{
+    font:italic 400 var(--fs-xl)/1 var(--serif);letter-spacing:-.01em;white-space:nowrap;
+    display:flex;align-items:center;gap:var(--s2);
+  }
+  /* The mark is the one element allowed to carry the ink weight up here;
+     it tints with the theme because it inherits currentColor. */
+  .brand .logo{fill:currentColor;flex:0 0 auto;opacity:.92}
   .brand b{
     font-style:normal;font-weight:600;font-family:var(--sans);font-size:var(--fs-sm);
     color:var(--muted);margin-left:var(--s2);letter-spacing:.06em;text-transform:uppercase;
@@ -247,7 +255,10 @@
 <body>
 
 <header>
-  <span class="brand">Footprint<b>Atlas</b></span>
+  <span class="brand">
+    <svg class="logo" viewBox="0 0 64 64" width="19" height="19" aria-hidden="true" focusable="false"><path d="M21 27C21 20.5 26.5 17 32.5 17 39.5 17 45 21.5 45 28c0 5.5-2.5 9.5-4.5 14-1.5 3.5-6.5 4.5-10 2.5C26.5 42 24.5 39 22.8 35.5 21.5 32.5 21 30 21 27Z"/><path d="M28.2 48.8c4.2-1.6 9 .5 9.9 4.8.9 4.3-2.9 7.6-6.9 7-3.8-.6-6-4-5.4-7.4.3-2 1.2-3.6 2.4-4.4Z"/><circle cx="18.6" cy="14.2" r="4.3"/><circle cx="27.2" cy="9.6" r="3.3"/><circle cx="34.6" cy="8.8" r="3"/><circle cx="41" cy="10.4" r="2.7"/><circle cx="46.2" cy="14" r="2.3"/></svg>
+    <span>Footprint<b>Atlas</b></span>
+  </span>
   <input id="q" type="search" placeholder="Search every session…  (⌘K)" autocomplete="off" aria-label="Search all sessions">
   <span class="stat" id="stat" role="status">loading…</span>
 </header>
