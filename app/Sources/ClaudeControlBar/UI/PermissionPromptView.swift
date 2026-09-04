@@ -9,7 +9,7 @@ struct PermissionPromptView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(spacing: 6) {
-        Brand.mark(12).foregroundStyle(Theme.color(.needs))
+        Image(systemName: "pawprint.fill").foregroundStyle(Theme.color(.needs))
         Text("Allow \(pending.tool ?? "tool")?").font(.system(size: 13, weight: .bold))
       }
       // What Claude just said, so you know what you're approving.

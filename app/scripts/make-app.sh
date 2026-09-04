@@ -28,16 +28,11 @@ cp "$BUILT" "$APP/Contents/MacOS/$EXEC"
 cp -R ../bridge/server.js ../bridge/mcp-server.mjs ../bridge/lib ../bridge/hooks ../bridge/scripts ../bridge/atlas ../bridge/package.json \
   "$APP/Contents/Resources/bridge/"
 
-# Brand assets. The .icns is what Finder and the Dock show; the MenuBarIcon PNGs
-# are template images the status bar tints itself. Both are optional at build
-# time — Brand.swift falls back to an SF Symbol — but ship them when present.
+# The app icon. The menu-bar glyph is SF Symbol pawprint.fill, drawn by the
+# system, so there is nothing to bundle for it.
 if [ -f ../brand/Footprint.icns ]; then
   cp ../brand/Footprint.icns "$APP/Contents/Resources/Footprint.icns"
 fi
-for scale in "" "@2x" "@3x"; do
-  src="../brand/menubar/MenuBarIcon${scale}.png"
-  [ -f "$src" ] && cp "$src" "$APP/Contents/Resources/MenuBarIcon${scale}.png"
-done
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
