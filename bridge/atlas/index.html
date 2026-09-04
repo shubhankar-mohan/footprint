@@ -5,11 +5,25 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Footprint Atlas</title>
 <style>
-  /* ── harbor tokens (docs/footprint-product-plan.md §2) ───────────────── */
+  /* ── harbor tokens (docs/footprint-product-plan.md §2) ─────────────────
+     Three scales, deliberately short: five type steps, one 4px space scale,
+     three radii. Anything not on a scale is a bug. Graph geometry lives here
+     too so CSS and JS cannot disagree about it. */
   :root{
     --ground:#d3dfe7; --panel:#fff; --sub:#eef3f7; --edge:rgba(33,47,56,.13); --edge2:rgba(33,47,56,.07);
-    --ink:#1b2730; --muted:#5d707d; --faint:#8a959e;
-    --work:#43617f; --needs:#9a4f12; --idle:#87a0ac; --fork:#4e8c6a; --crit:#c0503a;
+    --ink:#1b2730; --muted:#5d707d; --faint:#67727c;
+    --work:#43617f; --needs:#9a4f12; --idle:#87a0ac; --idle-ink:#586e7a; --fork:#41785a; --crit:#c0503a;
+    /* --idle-ink and --fork are measured against the ground they actually sit
+       on, not against white: the abandoned badge sits on --sub, where the
+       lighter values fell to 4.27:1 and 3.97:1. */
+
+    --fs-xs:11px; --fs-sm:12px; --fs-base:13px; --fs-lg:15px; --fs-xl:17px;
+    --s0:2px; --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+    --r1:6px; --r2:10px; --r3:999px;
+
+    --col-w:330px; --card-w:300px; --row-gap:16px; --stack-pad:4px;
+    --list-w:340px; --insp-w:380px;
+
     --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
     --serif:ui-serif,"New York",Georgia,serif;
     --mono:ui-monospace,"SF Mono",Menlo,monospace;
@@ -17,149 +31,225 @@
   @media (prefers-color-scheme:dark){
     :root:not([data-theme=light]){
       --ground:#181f26; --panel:#1e262e; --sub:#232c35; --edge:rgba(228,235,240,.13); --edge2:rgba(228,235,240,.07);
-      --ink:#e4ebf0; --muted:#98a5b0; --faint:#6f7c87;
-      --work:#7fa8cc; --needs:#e2a04e; --idle:#7f8f9c; --fork:#6fbf95; --crit:#e07a5f;
+      --ink:#e4ebf0; --muted:#98a5b0; --faint:#8d99a4;
+      --work:#7fa8cc; --needs:#e2a04e; --idle:#7f8f9c; --idle-ink:#93a5b1; --fork:#6fbf95; --crit:#e07a5f;
     }
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{
-    margin:0;background:var(--ground);color:var(--ink);font:13.5px/1.5 var(--sans);
+    margin:0;background:var(--ground);color:var(--ink);font:var(--fs-base)/1.5 var(--sans);
     -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;
   }
   button{font:inherit;color:inherit;cursor:pointer}
 
+  /* Screen-reader-only text. Used where a control needs a spoken prefix that
+     would be noise on screen — never to replace visible content. */
+  .sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+  /* One focus idiom for the whole app. :focus-visible so a mouse click does not
+     paint a ring, and deliberately NOT the same treatment as :hover — a ring
+     that matches hover tells a keyboard user nothing. */
+  :focus-visible{outline:2px solid var(--work);outline-offset:2px;border-radius:var(--r1)}
+  .card:focus-visible{outline-offset:3px}
+
   /* ── chrome ──────────────────────────────────────────────────────────── */
   header{
-    display:flex;align-items:center;gap:14px;padding:11px 16px;
+    display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);
     border-bottom:1px solid var(--edge);background:var(--panel);flex:0 0 auto;
   }
-  .brand{font:italic 400 17px/1 var(--serif);letter-spacing:-.01em}
-  .brand b{font-style:normal;font-weight:600;font-family:var(--sans);font-size:13px;color:var(--muted);margin-left:7px}
-  #q{
-    flex:1;max-width:520px;padding:7px 11px;border:1px solid var(--edge);border-radius:7px;
-    background:var(--sub);color:var(--ink);font:13px var(--sans);
+  /* The product is Footprint; Atlas is the room you are standing in. The name
+     therefore carries the serif and the weight, not the room label. */
+  .brand{font:italic 400 var(--fs-xl)/1 var(--serif);letter-spacing:-.01em;white-space:nowrap}
+  .brand b{
+    font-style:normal;font-weight:600;font-family:var(--sans);font-size:var(--fs-sm);
+    color:var(--muted);margin-left:var(--s2);letter-spacing:.06em;text-transform:uppercase;
   }
-  #q:focus{outline:2px solid var(--work);outline-offset:-1px}
-  .stat{font:11.5px var(--mono);color:var(--faint);white-space:nowrap}
+  #q{
+    flex:1;max-width:520px;min-width:120px;padding:var(--s2) var(--s3);
+    border:1px solid var(--edge);border-radius:var(--r1);
+    background:var(--sub);color:var(--ink);font:var(--fs-base) var(--sans);
+  }
+  .stat{font:var(--fs-xs) var(--mono);color:var(--faint);white-space:nowrap}
+  .stat.bad{color:var(--crit);font-weight:600}
 
-  main{flex:1;display:flex;min-height:0}
+  main{flex:1;display:flex;min-height:0;position:relative}
   #list{
-    width:340px;flex:0 0 auto;overflow-y:auto;border-right:1px solid var(--edge);
+    width:var(--list-w);flex:0 0 auto;overflow-y:auto;border-right:1px solid var(--edge);
     background:var(--panel);
   }
   #stage{flex:1;min-width:0;display:flex;flex-direction:column}
 
   .grp{
-    font:italic 400 12.5px/1 var(--serif);color:var(--muted);
-    padding:13px 14px 6px;position:sticky;top:0;background:var(--panel);
+    font:italic 400 var(--fs-base)/1 var(--serif);color:var(--muted);
+    padding:var(--s3) var(--s3) var(--s1);position:sticky;top:0;background:var(--panel);z-index:1;
   }
-  .grp .n{font:600 10.5px var(--sans);color:var(--faint);margin-left:6px}
+  .grp .n{font:600 var(--fs-xs) var(--sans);color:var(--faint);margin-left:var(--s1)}
 
   .row{
     display:block;width:100%;text-align:left;border:0;background:none;
-    padding:8px 14px;border-bottom:1px solid var(--edge2);
+    padding:var(--s2) var(--s3);border-bottom:1px solid var(--edge2);
   }
   .row:hover{background:var(--sub)}
   .row[aria-current=true]{background:var(--sub);box-shadow:inset 3px 0 0 var(--work)}
-  .row .t{font-weight:600;font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .row .p{color:var(--muted);font-size:11.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
-  .row .m{display:flex;gap:9px;margin-top:4px;font:11px var(--mono);color:var(--faint);align-items:center}
+  .row .t{font-weight:600;font-size:var(--fs-base);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .p{color:var(--muted);font-size:var(--fs-xs);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:var(--s0)}
+  .row .m{display:flex;gap:var(--s2);margin-top:var(--s1);font:var(--fs-xs) var(--mono);color:var(--faint);align-items:center}
   .chip{color:var(--needs)}
   .chip.b{color:var(--fork)}
 
-  /* ── graph ───────────────────────────────────────────────────────────── */
+  /* ── stage head ──────────────────────────────────────────────────────── */
   #head{
-    padding:11px 16px;border-bottom:1px solid var(--edge);background:var(--panel);
-    display:flex;align-items:baseline;gap:12px;flex:0 0 auto;
+    padding:var(--s3) var(--s4);border-bottom:1px solid var(--edge);background:var(--panel);
+    display:flex;align-items:baseline;gap:var(--s3);flex:0 0 auto;flex-wrap:wrap;
   }
-  #head h2{margin:0;font:600 14px var(--sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
-  #head .meta{font:11.5px var(--mono);color:var(--faint);white-space:nowrap;flex:0 0 auto}
-  #graphWrap{flex:1;overflow:auto;position:relative;padding:22px 26px 60px}
+  #head h2{
+    margin:0;font:600 var(--fs-lg) var(--sans);overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;flex:1;min-width:0;
+  }
+  #head .meta{font:var(--fs-xs) var(--mono);color:var(--faint);white-space:nowrap;flex:0 0 auto}
+  #head h2 .renamed{font:var(--fs-xs) var(--mono);color:var(--faint);margin-left:var(--s2);vertical-align:1px}
+  #sessActs{display:flex;gap:var(--s2);flex:0 0 auto}
+  /* Same trap as #insp: display:flex outranks the [hidden] attribute. */
+  #sessActs[hidden]{display:none}
+
+  /* ── graph ───────────────────────────────────────────────────────────── */
+  #graphWrap{flex:1;overflow:auto;position:relative;padding:var(--s5) var(--s5) var(--s6)}
   #wires{position:absolute;inset:0;pointer-events:none;overflow:visible}
   .edge{stroke:var(--edge);stroke-width:2;fill:none}
   .edge.live{stroke:var(--work);stroke-width:2.5}
   .card{
     position:absolute;box-sizing:border-box;
-    background:var(--panel);border:1px solid var(--edge);border-left:3px solid var(--needs);
-    border-radius:9px;padding:11px 13px 10px;cursor:pointer;text-align:left;
+    background:var(--panel);border:1px solid var(--edge);border-left:3px solid var(--edge);
+    border-radius:var(--r2);padding:var(--s3);cursor:pointer;text-align:left;
     transition:border-color .13s, transform .13s, box-shadow .13s;
   }
   .card:hover{border-color:var(--work);transform:translateY(-1px);box-shadow:0 3px 14px rgba(0,0,0,.14)}
-  .card:focus{outline:none;border-color:var(--work)}
-  .card[aria-selected=true]{
+  .card[aria-current=true]{
     border-color:var(--work);border-left-color:var(--work);
     box-shadow:0 0 0 2px color-mix(in srgb,var(--work) 34%,transparent);
   }
   .card .ask{
-    font:500 13px/1.42 var(--sans);color:var(--ink);
+    font:500 var(--fs-base)/1.42 var(--sans);color:var(--ink);
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
   }
-  .card .foot{display:flex;gap:9px;align-items:center;margin-top:8px;font:11px var(--mono);color:var(--faint)}
+  .card .foot{display:flex;gap:var(--s2);align-items:center;margin-top:var(--s2);font:var(--fs-xs) var(--mono);color:var(--faint)}
+  /* The reply count is short and fixed; let the tool pill absorb the squeeze
+     instead, or "27 replies" breaks across two lines. */
+  .card .foot>span:first-child{white-space:nowrap;flex:0 0 auto}
   .card .pill{
-    background:var(--sub);border-radius:20px;padding:2px 8px;color:var(--muted);
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px;
+    background:var(--sub);border-radius:var(--r3);padding:var(--s0) var(--s2);color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px;min-width:0;flex:0 1 auto;
   }
   .card .n{color:var(--work);font-weight:600}
-  .card.dead{opacity:.52;border-left-color:var(--idle)}
-  .card .badge{margin-left:auto;font:600 9.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--idle)}
+  /* An abandoned branch recedes through weight and ground, never through
+     opacity — opacity composited the badge down to 1.6:1 against the card. */
+  .card.dead{background:var(--sub);border-left-color:var(--idle)}
+  .card.dead .ask{color:var(--muted);font-weight:400}
+  .card .badge{margin-left:auto;font:600 var(--fs-xs) var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--idle-ink)}
+  /* Amber appears in exactly two places in this file, both of them the context
+     frontier — the one thing on the map that is asking for your attention. */
   .card.frontierCard{border-top:2px dashed var(--needs)}
-  .card .fr{font:italic 10.5px var(--serif);color:var(--needs);display:block;margin-bottom:5px}
-  #sessActs{display:flex;gap:7px;flex:0 0 auto}
-  /* Same trap as #insp: display:flex outranks the [hidden] attribute. */
-  #sessActs[hidden]{display:none}
-  #head h2 .renamed{font:10px var(--mono);color:var(--faint);margin-left:7px;vertical-align:1px}
+  .card .fr{font:italic var(--fs-xs) var(--serif);color:var(--needs);display:block;margin-bottom:var(--s1)}
 
   /* ── inspector ───────────────────────────────────────────────────────── */
   #insp{
-    width:380px;flex:0 0 auto;border-left:1px solid var(--edge);background:var(--panel);
+    width:var(--insp-w);flex:0 0 auto;border-left:1px solid var(--edge);background:var(--panel);
     display:flex;flex-direction:column;overflow:hidden;
   }
   /* `display:flex` outranks the [hidden] attribute's display:none, so the panel
      showed as an empty column with orphaned buttons until this was added. */
   #insp[hidden]{display:none}
-  #insp .hd{padding:12px 15px;border-bottom:1px solid var(--edge)}
-  #insp .role{font:600 11px var(--sans);letter-spacing:.08em;text-transform:uppercase}
-  #insp .body{padding:13px 15px;overflow-y:auto;flex:1;font-size:13px;line-height:1.55}
-  #insp .ask{white-space:pre-wrap;padding-left:10px;border-left:3px solid var(--needs);color:var(--ink)}
+  #insp .hd{padding:var(--s3) var(--s4);border-bottom:1px solid var(--edge)}
+  #insp .role{font:600 var(--fs-xs) var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--work)}
+  #insp .body{padding:var(--s3) var(--s4);overflow-y:auto;flex:1;font-size:var(--fs-base);line-height:1.55}
+  #insp .ask{white-space:pre-wrap;padding-left:var(--s3);border-left:3px solid var(--work);color:var(--muted)}
   #insp .answerHd{
-    margin:16px 0 6px;font:600 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;
-    color:var(--work);display:flex;gap:8px;align-items:baseline;
+    margin:var(--s4) 0 var(--s1);font:600 var(--fs-xs) var(--sans);letter-spacing:.08em;text-transform:uppercase;
+    color:var(--work);display:flex;gap:var(--s2);align-items:baseline;
   }
-  #insp .cost{font:11px var(--mono);color:var(--faint);letter-spacing:0;text-transform:none}
-  #insp .answer{white-space:pre-wrap;color:var(--muted)}
-  #insp .ref{font:11px var(--mono);color:var(--faint);word-break:break-all;margin-top:6px}
-  #insp .acts{padding:11px 15px;border-top:1px solid var(--edge);display:flex;gap:8px;flex-wrap:wrap}
+  #insp .cost{font:var(--fs-xs) var(--mono);color:var(--faint);letter-spacing:0;text-transform:none}
+  /* The answer is what you clicked for, so it gets the ink; the ask above is
+     the context you already have. This pairing used to be the other way up. */
+  #insp .answer{white-space:pre-wrap;color:var(--ink)}
+  #insp .ref{font:var(--fs-xs) var(--mono);color:var(--faint);word-break:break-all;margin-top:var(--s1)}
+  #insp .acts{padding:var(--s3) var(--s4);border-top:1px solid var(--edge);display:flex;gap:var(--s2);flex-wrap:wrap}
   .btn{
-    border:1px solid var(--edge);border-radius:6px;padding:6px 11px;background:var(--sub);
-    font:600 12px var(--sans);
+    border:1px solid var(--edge);border-radius:var(--r1);padding:var(--s2) var(--s3);background:var(--sub);
+    font:600 var(--fs-sm) var(--sans);
   }
   .btn:hover{border-color:var(--work)}
   .btn.pri{background:var(--work);border-color:var(--work);color:var(--panel)}
 
-  .empty{padding:40px 24px;text-align:center;color:var(--muted)}
-  .empty .q{font:italic 400 16px var(--serif);margin-bottom:6px}
-  .hit{padding:9px 14px;border-bottom:1px solid var(--edge2);cursor:pointer;display:block;width:100%;text-align:left;background:none;border-left:0;border-right:0;border-top:0}
+  .empty{padding:var(--s6) var(--s5);text-align:center;color:var(--muted)}
+  .empty .q{font:italic 400 var(--fs-xl) var(--serif);margin-bottom:var(--s1);color:var(--ink)}
+  /* Failure has to look different from emptiness. Before this, a dead bridge
+     and a fresh install rendered identically. */
+  .empty.bad .q{color:var(--crit)}
+  .empty .why{font:var(--fs-xs) var(--mono);color:var(--faint);margin-top:var(--s2);word-break:break-word}
+  .empty .btn{margin-top:var(--s4)}
+
+  .hit{
+    padding:var(--s2) var(--s3);border-bottom:1px solid var(--edge2);cursor:pointer;
+    display:block;width:100%;text-align:left;background:none;border-left:0;border-right:0;border-top:0;
+  }
   .hit:hover{background:var(--sub)}
   .hit mark{background:color-mix(in srgb,var(--needs) 26%,transparent);color:inherit;border-radius:2px}
-  dialog{border:0;border-radius:12px;padding:0;max-width:760px;width:92vw;background:var(--panel);color:var(--ink)}
+
+  dialog{border:0;border-radius:var(--r2);padding:0;max-width:760px;width:92vw;background:var(--panel);color:var(--ink)}
   dialog::backdrop{background:rgba(0,0,0,.45)}
-  dialog .dh{padding:14px 18px;border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center}
-  dialog .db{padding:16px 18px;max-height:65vh;overflow-y:auto;white-space:pre-wrap;font:13px/1.6 var(--sans)}
+  dialog .dh{padding:var(--s3) var(--s4);border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center;gap:var(--s3)}
+  dialog .db{padding:var(--s4);max-height:65vh;overflow-y:auto;white-space:pre-wrap;font:var(--fs-base)/1.6 var(--sans)}
+  #promptDlg{max-width:460px}
+  #promptDlg .db{white-space:normal}
+  #promptDlg label{display:block;font-size:var(--fs-sm);color:var(--muted);margin-bottom:var(--s2)}
+  #pInput{
+    width:100%;padding:var(--s2) var(--s3);border:1px solid var(--edge);border-radius:var(--r1);
+    background:var(--sub);color:var(--ink);font:var(--fs-base) var(--sans);
+  }
+  #promptDlg .acts{padding:var(--s3) var(--s4);border-top:1px solid var(--edge);display:flex;gap:var(--s2);justify-content:flex-end}
+
   .toast{
-    position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
-    background:var(--ink);color:var(--ground);padding:9px 15px;border-radius:8px;
-    font:600 12.5px var(--sans);opacity:0;transition:opacity .18s;pointer-events:none;
+    position:fixed;bottom:var(--s4);left:50%;transform:translateX(-50%);
+    background:var(--ink);color:var(--ground);padding:var(--s2) var(--s3);border-radius:var(--r1);
+    font:600 var(--fs-sm) var(--sans);opacity:0;transition:opacity .18s;pointer-events:none;max-width:80vw;
   }
   .toast.on{opacity:1}
+
+  /* ── responsive ──────────────────────────────────────────────────────── */
+  /* Below ~1180px three fixed columns stop fitting, so the inspector floats
+     over the graph instead of squeezing it. */
+  @media (max-width:1180px){
+    #insp{
+      position:absolute;right:0;top:0;bottom:0;z-index:3;
+      box-shadow:-8px 0 24px rgba(0,0,0,.18);
+    }
+  }
+  @media (max-width:900px){
+    :root{--list-w:260px;--insp-w:min(380px,86vw);--col-w:280px;--card-w:252px}
+    header{flex-wrap:wrap;gap:var(--s2)}
+    #q{order:3;flex-basis:100%;max-width:none}
+  }
+  @media (max-width:680px){
+    :root{--insp-w:100vw;--col-w:100%;--card-w:100%}
+    main{flex-direction:column}
+    #list{width:auto;max-height:34vh;border-right:0;border-bottom:1px solid var(--edge)}
+    #graphWrap{padding:var(--s3)}
+  }
+
+  /* Honour the system setting, as the native menu-bar app already does. */
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}
+    .card:hover{transform:none}
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <span class="brand">Atlas<b>Footprint</b></span>
+  <span class="brand">Footprint<b>Atlas</b></span>
   <input id="q" type="search" placeholder="Search every session…  (⌘K)" autocomplete="off" aria-label="Search all sessions">
-  <span class="stat" id="stat">loading…</span>
+  <span class="stat" id="stat" role="status">loading…</span>
 </header>
 
 <main>
@@ -173,9 +263,11 @@
         <button class="btn pri" id="aReply" title="Open a terminal that continues this conversation">Reply in terminal</button>
       </span>
     </div>
-    <div id="graphWrap"><div class="empty"><div class="q">The map is quiet.</div><div>Pick a session on the left to see its shape.</div></div></div>
+    <div id="graphWrap" role="group" aria-label="Your asks in this session">
+      <div class="empty"><div class="q">The map is quiet.</div><div>Pick a session on the left to see its shape.</div></div>
+    </div>
   </div>
-  <aside id="insp" hidden>
+  <aside id="insp" hidden aria-label="Selected ask">
     <div class="hd"><div class="role" id="iRole"></div><div class="ref" id="iRef"></div></div>
     <div class="body" id="iBody"></div>
     <div class="acts">
@@ -187,15 +279,31 @@
   </aside>
 </main>
 
-<dialog id="modal">
+<dialog id="modal" aria-labelledby="mTitle">
   <div class="dh"><strong id="mTitle">Turn</strong><button class="btn" id="mClose">Close</button></div>
   <div class="db" id="mBody"></div>
 </dialog>
-<div class="toast" id="toast"></div>
+
+<!-- Replaces window.prompt(), which cannot be styled, cannot be themed, and
+     stops the whole page dead while it is open. -->
+<dialog id="promptDlg" aria-labelledby="pTitle">
+  <form id="pForm" method="dialog">
+    <div class="dh"><strong id="pTitle">Name</strong></div>
+    <div class="db">
+      <label for="pInput" id="pLabel"></label>
+      <input id="pInput" type="text" autocomplete="off">
+    </div>
+    <div class="acts">
+      <button class="btn" id="pCancel" type="button">Cancel</button>
+      <button class="btn pri" id="pOk" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const api = (p) => fetch(p).then((r) => r.json());
 let SESSIONS = [], CURRENT = null, TREE = null, SEL = null;
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
@@ -206,13 +314,74 @@ const ago = (ms) => {
   if (s < 86400) return Math.round(s / 3600) + "h";
   return Math.round(s / 86400) + "d";
 };
+
+/* ── transport ────────────────────────────────────────────────────────────
+   Every call can fail: the bridge is a local process the user can quit at any
+   moment. `api` therefore throws rather than returning undefined, and every
+   call site has a visible failure path. Silent failure here used to be
+   indistinguishable from "you have no sessions". */
+async function api(path, opts) {
+  let res;
+  try {
+    res = await fetch(path, opts);
+  } catch {
+    throw new Error("The bridge is not responding. Is Footprint still running?");
+  }
+  if (!res.ok) throw new Error(`The bridge returned ${res.status} ${res.statusText || ""}`.trim());
+  try {
+    return await res.json();
+  } catch {
+    throw new Error("The bridge sent a reply this page could not read.");
+  }
+}
+const post = (path, body) =>
+  api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+const errMsg = (e) => (e && e.message) || String(e) || "Something went wrong.";
+
+function errorBlock(headline, detail, retry) {
+  return `<div class="empty bad">
+    <div class="q">${esc(headline)}</div>
+    <div class="why">${esc(detail)}</div>
+    ${retry ? `<button class="btn" data-retry="${esc(retry)}">Try again</button>` : ""}
+  </div>`;
+}
+
 function toast(msg) {
   const t = $("#toast"); t.textContent = msg; t.classList.add("on");
-  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("on"), 1900);
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("on"), 2600);
+}
+
+/* A themed stand-in for window.prompt. Resolves to the string, or null when
+   the user cancels or dismisses with Escape. */
+function askFor(title, label, value = "") {
+  return new Promise((resolve) => {
+    const dlg = $("#promptDlg"), input = $("#pInput");
+    $("#pTitle").textContent = title;
+    $("#pLabel").textContent = label;
+    input.value = value;
+    let settled = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      dlg.close();
+      resolve(v);
+    };
+    $("#pForm").onsubmit = (e) => { e.preventDefault(); finish(input.value); };
+    $("#pCancel").onclick = () => finish(null);
+    dlg.addEventListener("close", () => finish(null), { once: true });
+    dlg.showModal();
+    input.focus(); input.select();
+  });
 }
 
 /* ── session list, grouped by project ─────────────────────────────────── */
 function renderList() {
+  if (!SESSIONS.length) {
+    $("#list").innerHTML = `<div class="empty"><div class="q">No sessions yet.</div>
+      <div>Run Claude Code once and it will appear here.</div></div>`;
+    return;
+  }
   const byProj = new Map();
   for (const s of SESSIONS) {
     if (!byProj.has(s.project)) byProj.set(s.project, []);
@@ -238,18 +407,44 @@ function renderList() {
   $("#list").innerHTML = out.join("");
 }
 
-/* ── graph ────────────────────────────────────────────────────────────── */
-const COL_W = 330, CARD_W = 300, ROW_GAP = 16, PAD = 4;
+/* ── graph ────────────────────────────────────────────────────────────────
+   Geometry is declared once, in CSS, and read back here — so a media query can
+   narrow the lanes without JS and the two can never drift apart. */
+function geom() {
+  const cs = getComputedStyle(document.documentElement);
+  const px = (n, fallback) => {
+    const v = parseFloat(cs.getPropertyValue(n));
+    return Number.isFinite(v) ? v : fallback;
+  };
+  const wrap = $("#graphWrap");
+  const wrapW = wrap.clientWidth || 900;
+  let COL_W = px("--col-w", 330), CARD_W = px("--card-w", 300);
+  // The narrow breakpoint sets these to 100%, which parseFloat reads as 100.
+  // Measure the pane's real padding rather than assuming a step of the scale —
+  // that breakpoint also changes the padding.
+  if (cs.getPropertyValue("--card-w").includes("%")) {
+    const ws = getComputedStyle(wrap);
+    const pad = (parseFloat(ws.paddingLeft) || 0) + (parseFloat(ws.paddingRight) || 0);
+    CARD_W = Math.max(200, wrapW - pad);
+    COL_W = CARD_W + 30;
+  }
+  return { COL_W, CARD_W, ROW_GAP: px("--row-gap", 16), PAD: px("--stack-pad", 4) };
+}
 
 function renderGraph(t) {
   TREE = t;
   const wrap = $("#graphWrap");
-  if (!t.ok) { wrap.innerHTML = `<div class="empty">${esc(t.error)}</div>`; return; }
+  if (!t.ok) {
+    wrap.innerHTML = errorBlock("This session would not open.", t.error || "Unknown error", "tree");
+    return;
+  }
   if (!t.nodes.length) {
     wrap.innerHTML = `<div class="empty"><div class="q">Nothing was asked here.</div>
       <div>This session has no prompts of your own yet.</div></div>`;
     return;
   }
+
+  const { COL_W, CARD_W, ROW_GAP, PAD } = geom();
 
   // One lane per branch, so an abandoned rewind sits beside the live path
   // rather than hidden behind it.
@@ -279,11 +474,15 @@ function renderGraph(t) {
     const toolBit = r.tools.length
       ? `<span class="pill">${esc(r.tools.slice(0, 3).join(", "))}${r.tools.length > 3 ? "…" : ""}</span>` : "";
 
+    // No aria-label here: one on the button would replace everything inside it,
+    // hiding the reply count, the tools and the abandoned badge from anyone
+    // using a screen reader. A short visually-hidden prefix does the framing
+    // instead, and the real content is left to speak for itself.
     cards.push(
       `<button class="card${n.onLivePath ? "" : " dead"}${n.frontier ? " frontierCard" : ""}"
                style="left:${x}px;width:${CARD_W}px"
-               data-id="${esc(n.id)}" aria-selected="${n.id === SEL}"
-               aria-label="You asked: ${esc((n.preview || "").slice(0, 90))}">
+               data-id="${esc(n.id)}" aria-current="${n.id === SEL}" tabindex="-1">
+         <span class="sr">You asked:</span>
          ${n.frontier ? '<span class="fr">&#8961; context frontier — compacted here</span>' : ""}
          <span class="ask">${esc(n.preview || "(empty)")}</span>
          <span class="foot">${turnBit}${toolBit}${n.onLivePath ? "" : '<span class="badge">abandoned</span>'}</span>
@@ -297,7 +496,7 @@ function renderGraph(t) {
   // Pass 1: put the cards in the DOM so the browser can lay the text out.
   wrap.innerHTML =
     `<div id="stack" style="position:relative;width:${W}px">
-       <svg id="wires" width="${W}" height="0"></svg>
+       <svg id="wires" width="${W}" height="0" aria-hidden="true"></svg>
        ${cards.join("")}
      </div>`;
 
@@ -315,20 +514,80 @@ function renderGraph(t) {
     y += h + ROW_GAP;
   }
 
-  // Pass 3: wire them together now that every position is known.
+  // Pass 3: wire them together now that every position is known. Wires meet the
+  // card at its horizontal centre; the old fixed 18px offset landed the line on
+  // the coloured left border, which read as a defect.
   const wires = [];
   for (const e of t.edges) {
     const from = pos.get(e.from), to = pos.get(e.to);
     if (!from || !to) continue;
     const live = byId.get(e.from)?.onLivePath && byId.get(e.to)?.onLivePath;
-    const x1 = from.x + 18, y1 = from.y + from.h, x2 = to.x + 18, y2 = to.y;
+    const x1 = from.x + CARD_W / 2, y1 = from.y + from.h;
+    const x2 = to.x + CARD_W / 2, y2 = to.y;
     wires.push(`<path class="edge${live ? " live" : ""}" d="M${x1},${y1} C${x1},${y1 + 14} ${x2},${y2 - 14} ${x2},${y2}"/>`);
   }
   const svg = wrap.querySelector("#wires");
   svg.setAttribute("height", String(y));
   svg.innerHTML = wires.join("");
   wrap.querySelector("#stack").style.height = `${y}px`;
+
+  setRover(wrap.querySelector(`.card[data-id="${SEL ? CSS.escape(SEL) : ""}"]`) || wrap.querySelector(".card"));
 }
+
+/* ── keyboard model for the graph ─────────────────────────────────────────
+   A roving tabindex: the group holds one tab stop, and the arrows move within
+   it. Without this the only way to reach a card was to Tab through every card
+   before it. */
+function cardsInOrder() { return [...document.querySelectorAll("#graphWrap .card")]; }
+
+function setRover(el) {
+  if (!el) return;
+  for (const c of cardsInOrder()) c.tabIndex = c === el ? 0 : -1;
+}
+
+function moveRover(dir) {
+  const all = cardsInOrder();
+  if (!all.length) return;
+  const cur = document.activeElement?.closest?.(".card") || all.find((c) => c.tabIndex === 0) || all[0];
+  const i = all.indexOf(cur);
+  let target = null;
+
+  if (dir === "next") target = all[Math.min(i + 1, all.length - 1)];
+  else if (dir === "prev") target = all[Math.max(i - 1, 0)];
+  else if (dir === "first") target = all[0];
+  else if (dir === "last") target = all[all.length - 1];
+  else {
+    // Left/right jump lanes: nearest card in the adjacent column, measured from
+    // the current card's own vertical position.
+    const box = cur.getBoundingClientRect();
+    const wantLeft = dir === "left";
+    let best = null, bestScore = Infinity;
+    for (const c of all) {
+      if (c === cur) continue;
+      const b = c.getBoundingClientRect();
+      if (wantLeft ? b.left >= box.left : b.left <= box.left) continue;
+      const score = Math.abs(b.left - box.left) + Math.abs(b.top - box.top) * 2;
+      if (score < bestScore) { bestScore = score; best = c; }
+    }
+    target = best;
+  }
+  if (!target) return;
+  setRover(target);
+  target.focus();
+  target.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+$("#graphWrap").addEventListener("keydown", (e) => {
+  if (!e.target.closest(".card")) return;
+  const map = {
+    ArrowDown: "next", ArrowUp: "prev", ArrowRight: "right", ArrowLeft: "left",
+    Home: "first", End: "last",
+  };
+  const dir = map[e.key];
+  if (!dir) return;
+  e.preventDefault();
+  moveRover(dir);
+});
 
 /* ── inspector ────────────────────────────────────────────────────────── */
 async function select(id) {
@@ -337,9 +596,8 @@ async function select(id) {
   if (!n) return;
   $("#insp").hidden = false;
   $("#iRole").textContent = "You asked";
-  $("#iRole").style.color = "var(--needs)";
   $("#iRef").textContent = `node://${CURRENT}/${n.id}`;
-  document.querySelectorAll(".card").forEach((c) => c.setAttribute("aria-selected", String(c.dataset.id === id)));
+  document.querySelectorAll(".card").forEach((c) => c.setAttribute("aria-current", String(c.dataset.id === id)));
 
   const r = n.reply || { tools: [], turns: 0 };
   const cost = [r.turns ? `${r.turns} repl${r.turns === 1 ? "y" : "ies"}` : null,
@@ -354,9 +612,16 @@ async function select(id) {
   render(n.preview || "…", r.text || "");
 
   // The tree payload carries only a short preview of each; fetch the full ask.
-  const full = await api(`/atlas/api/node?session=${encodeURIComponent(CURRENT)}&uuid=${encodeURIComponent(id)}`);
-  if (SEL !== id) return;
-  if (full.ok) render(full.text || "(empty)", r.text || "");
+  try {
+    const full = await api(`/atlas/api/node?session=${encodeURIComponent(CURRENT)}&uuid=${encodeURIComponent(id)}`);
+    if (SEL !== id) return;
+    if (full.ok) render(full.text || "(empty)", r.text || "");
+  } catch (e) {
+    if (SEL !== id) return;
+    // The preview is already on screen — say the full text is missing rather
+    // than blanking what the user can see.
+    toast(`Could not load the full ask — ${errMsg(e)}`);
+  }
 }
 
 async function openSession(id) {
@@ -365,7 +630,14 @@ async function openSession(id) {
   const s = SESSIONS.find((x) => x.id === id);
   setTitle(s);
   $("#graphWrap").innerHTML = `<div class="empty">Reading the session…</div>`;
-  const t = await api(`/atlas/api/tree?id=${encodeURIComponent(id)}`);
+  let t;
+  try {
+    t = await api(`/atlas/api/tree?id=${encodeURIComponent(id)}`);
+  } catch (e) {
+    $("#meta").textContent = "";
+    $("#graphWrap").innerHTML = errorBlock("This session would not open.", errMsg(e), "tree");
+    return;
+  }
   if (t.ok) {
     const live = t.nodes.filter((n) => n.onLivePath).length;
     const off = t.nodes.length - live;
@@ -377,26 +649,27 @@ async function openSession(id) {
   renderGraph(t);
 }
 
-/* ── search ───────────────────────────────────────────────────────────── */
 function setTitle(s) {
   $("#title").innerHTML =
     esc(s?.title || CURRENT || "Select a session") +
     (s?.renamed ? '<span class="renamed">renamed</span>' : "");
 }
 
+/* ── session actions ──────────────────────────────────────────────────── */
 $("#aRename").addEventListener("click", async () => {
   const s = SESSIONS.find((x) => x.id === CURRENT);
-  const next = prompt("Name this conversation (blank restores the original):", s?.title || "");
+  const next = await askFor("Rename session", "Blank restores the original name.", s?.title || "");
   if (next === null) return;
-  const r = await fetch("/atlas/api/rename", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session: CURRENT, name: next }),
-  }).then((x) => x.json());
-  if (!r.ok) return toast(r.error);
-  SESSIONS = (await api("/atlas/api/sessions")).sessions;
-  renderList();
-  setTitle(SESSIONS.find((x) => x.id === CURRENT));
-  toast(r.title ? `Renamed to “${r.title}”` : "Original name restored");
+  try {
+    const r = await post("/atlas/api/rename", { session: CURRENT, name: next });
+    if (!r.ok) return toast(r.error || "Could not rename this session");
+    SESSIONS = (await api("/atlas/api/sessions")).sessions;
+    renderList();
+    setTitle(SESSIONS.find((x) => x.id === CURRENT));
+    toast(r.title ? `Renamed to “${r.title}”` : "Original name restored");
+  } catch (e) {
+    toast(`Could not rename — ${errMsg(e)}`);
+  }
 });
 
 // "Reply" means continue the real conversation: a terminal running
@@ -405,25 +678,33 @@ $("#aRename").addEventListener("click", async () => {
 $("#aReply").addEventListener("click", async () => {
   const s = SESSIONS.find((x) => x.id === CURRENT);
   toast("Opening a terminal…");
-  const r = await fetch("/atlas/api/resume", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session: CURRENT, cwd: s?.cwd }),
-  }).then((x) => x.json());
-  if (r.ok) return toast("Continuing this conversation in your terminal");
-  if (r.command) {
-    await navigator.clipboard.writeText(r.command);
-    return toast("tmux not found — command copied to your clipboard");
+  try {
+    const r = await post("/atlas/api/resume", { session: CURRENT, cwd: s?.cwd });
+    if (r.ok) return toast("Continuing this conversation in your terminal");
+    if (r.command) {
+      await navigator.clipboard.writeText(r.command);
+      return toast("tmux not found — command copied to your clipboard");
+    }
+    toast(r.error || "Could not resume");
+  } catch (e) {
+    toast(`Could not resume — ${errMsg(e)}`);
   }
-  toast(r.error || "Could not resume");
 });
 
+/* ── search ───────────────────────────────────────────────────────────── */
 let searchTimer;
 $("#q").addEventListener("input", (e) => {
   clearTimeout(searchTimer);
   const q = e.target.value.trim();
   searchTimer = setTimeout(async () => {
     if (!q) { renderList(); return; }
-    const r = await api(`/atlas/api/search?q=${encodeURIComponent(q)}`);
+    let r;
+    try {
+      r = await api(`/atlas/api/search?q=${encodeURIComponent(q)}`);
+    } catch (err) {
+      $("#list").innerHTML = errorBlock("Search failed.", errMsg(err), "search");
+      return;
+    }
     if (!r.hits.length) { $("#list").innerHTML = `<div class="empty"><div class="q">Nothing found.</div></div>`; return; }
     const rx = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig");
     $("#list").innerHTML =
@@ -431,63 +712,120 @@ $("#q").addEventListener("input", (e) => {
       r.hits.map((h) =>
         `<button class="hit" data-id="${esc(h.sessionId)}" data-node="${esc(h.uuid)}">
            <span class="t" style="font-weight:600">${esc(h.title)}</span>
-           <span class="p" style="color:var(--muted);font-size:11.5px;display:block">${esc(h.snippet).replace(rx, "<mark>$1</mark>")}</span>
-           <span class="m" style="font:11px var(--mono);color:var(--faint)">${esc(h.project)} · ${ago(h.updatedAt)}</span>
+           <span class="p" style="color:var(--muted);font-size:var(--fs-xs);display:block">${esc(h.snippet).replace(rx, "<mark>$1</mark>")}</span>
+           <span class="m" style="font:var(--fs-xs) var(--mono);color:var(--faint)">${esc(h.project)} · ${ago(h.updatedAt)}</span>
          </button>`).join("");
   }, 180);
 });
 
 /* ── events ───────────────────────────────────────────────────────────── */
 $("#list").addEventListener("click", (e) => {
+  const retry = e.target.closest("[data-retry]");
+  if (retry) {
+    const what = retry.dataset.retry;
+    if (what === "boot") boot();
+    else if (what === "search") $("#q").dispatchEvent(new Event("input"));
+    return;
+  }
   const row = e.target.closest(".row, .hit");
   if (!row) return;
-  const id = row.dataset.id;
-  openSession(id).then(() => { if (row.dataset.node) select(row.dataset.node); });
-});
-$("#graphWrap").addEventListener("click", (e) => {
-  const c = e.target.closest(".card");
-  if (c) select(c.dataset.id);
+  openSession(row.dataset.id).then(() => { if (row.dataset.node) select(row.dataset.node); });
 });
 
+$("#graphWrap").addEventListener("click", (e) => {
+  const retry = e.target.closest("[data-retry]");
+  if (retry) { if (CURRENT) openSession(CURRENT); return; }
+  const c = e.target.closest(".card");
+  if (c) { setRover(c); select(c.dataset.id); }
+});
+
+/* ── inspector actions ────────────────────────────────────────────────── */
+const sliceRef = () => `node://${CURRENT}/${SEL}`;
+
 $("#aRef").addEventListener("click", async () => {
-  await navigator.clipboard.writeText(`node://${CURRENT}/${SEL}`);
-  toast("Reference copied");
+  try {
+    await navigator.clipboard.writeText(sliceRef());
+    toast("Reference copied");
+  } catch (e) {
+    toast(`Could not copy — ${errMsg(e)}`);
+  }
 });
+
 $("#aQuote").addEventListener("click", async () => {
-  const r = await api(`/atlas/api/slice?ref=${encodeURIComponent(`node://${CURRENT}/${SEL}`)}`);
-  if (!r.ok) return toast(r.error);
-  await navigator.clipboard.writeText(r.markdown);
-  toast(`Slice copied — ${r.turns} turns`);
+  try {
+    const r = await api(`/atlas/api/slice?ref=${encodeURIComponent(sliceRef())}`);
+    if (!r.ok) return toast(r.error || "Could not build the slice");
+    await navigator.clipboard.writeText(r.markdown);
+    toast(`Slice copied — ${r.turns} turns`);
+  } catch (e) {
+    toast(`Could not copy the slice — ${errMsg(e)}`);
+  }
 });
+
 $("#aRead").addEventListener("click", async () => {
-  const r = await api(`/atlas/api/slice?ref=${encodeURIComponent(`node://${CURRENT}/${SEL}`)}`);
-  $("#mTitle").textContent = r.ok ? `${r.turns} turns up to this point` : "Could not read";
-  $("#mBody").textContent = r.ok ? r.markdown : r.error;
+  try {
+    const r = await api(`/atlas/api/slice?ref=${encodeURIComponent(sliceRef())}`);
+    $("#mTitle").textContent = r.ok ? `${r.turns} turns up to this point` : "Could not read";
+    $("#mBody").textContent = r.ok ? r.markdown : (r.error || "Unknown error");
+  } catch (e) {
+    $("#mTitle").textContent = "Could not read";
+    $("#mBody").textContent = errMsg(e);
+  }
   $("#modal").showModal();
 });
 $("#mClose").addEventListener("click", () => $("#modal").close());
+
 $("#aMark").addEventListener("click", async () => {
-  const label = prompt("Name this turn so you can quote it later:");
+  const label = await askFor("Mark this turn", "Name it so you can quote it later.");
   if (!label) return;
-  const r = await fetch("/atlas/api/mark", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session: CURRENT, uuid: SEL, label }),
-  }).then((x) => x.json());
-  toast(r.ok ? `Marked “${label}”` : r.error);
+  try {
+    const r = await post("/atlas/api/mark", { session: CURRENT, uuid: SEL, label });
+    toast(r.ok ? `Marked “${label}”` : (r.error || "Could not mark this turn"));
+  } catch (e) {
+    toast(`Could not mark — ${errMsg(e)}`);
+  }
 });
+
 addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); $("#q").focus(); }
+  if (e.key === "Escape" && !$("#insp").hidden && !document.querySelector("dialog[open]")) {
+    $("#insp").hidden = true;
+    SEL = null;
+    document.querySelectorAll(".card").forEach((c) => c.setAttribute("aria-current", "false"));
+  }
+});
+
+// A lane width change (a breakpoint crossing) invalidates every measured
+// position, so re-run the layout rather than leaving the wires behind.
+let resizeTimer;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (TREE?.ok && TREE.nodes.length) renderGraph(TREE); }, 160);
 });
 
 /* ── boot ─────────────────────────────────────────────────────────────── */
-(async () => {
-  const d = await api("/atlas/api/sessions");
-  SESSIONS = d.sessions;
-  const turns = SESSIONS.reduce((n, s) => n + s.turns, 0);
-  const branched = SESSIONS.filter((s) => s.branches).length;
-  $("#stat").textContent = `${d.total} sessions · ${d.projects.length} projects · ${turns.toLocaleString()} turns · ${branched} branched`;
-  renderList();
-})();
+async function boot() {
+  const stat = $("#stat");
+  stat.classList.remove("bad");
+  stat.textContent = "loading…";
+  $("#list").innerHTML = "";
+  try {
+    const d = await api("/atlas/api/sessions");
+    SESSIONS = d.sessions || [];
+    const turns = SESSIONS.reduce((n, s) => n + s.turns, 0);
+    const branched = SESSIONS.filter((s) => s.branches).length;
+    stat.textContent =
+      `${d.total} sessions · ${d.projects.length} projects · ${turns.toLocaleString()} turns · ${branched} branched`;
+    renderList();
+  } catch (e) {
+    // Before this existed the status read "loading…" forever and the list sat
+    // empty, which looked exactly like having no sessions at all.
+    stat.textContent = "cannot reach the bridge";
+    stat.classList.add("bad");
+    $("#list").innerHTML = errorBlock("The Atlas could not load.", errMsg(e), "boot");
+  }
+}
+boot();
 </script>
 </body>
 </html>
