@@ -11,6 +11,9 @@
 // real hook payload shapes for Phase 1.
 
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { URL } from "node:url";
 
 import {
@@ -19,6 +22,9 @@ import {
   EVENT_LOG,
 } from "./lib/paths.js";
 import * as eventlog from "./lib/eventlog.js";
+import * as atlasEngine from "./lib/atlas-engine.js";
+import * as slicer from "./lib/slicer.js";
+import * as marks from "./lib/marks.js";
 import * as sessions from "./lib/sessions.js";
 import * as dismissed from "./lib/dismissed.js";
 import * as pending from "./lib/pending.js";
@@ -30,6 +36,30 @@ import * as transcript from "./lib/transcript.js";
 import { decisionOutput } from "./lib/hookdecision.js";
 import * as tmux from "./scripts/tmux.mjs";
 import * as revealer from "./scripts/reveal.mjs";
+
+// The Atlas is a single static page: no build step, no bundler, no dependency —
+// it talks to /atlas/api/* with fetch. See D1.
+const ATLAS_PAGE = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "atlas",
+  "index.html"
+);
+
+function sendAtlasPage(res) {
+  let html;
+  try {
+    html = fs.readFileSync(ATLAS_PAGE);
+  } catch {
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    return res.end("Atlas page missing from this build.");
+  }
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": html.length,
+    "Cache-Control": "no-store",
+  });
+  res.end(html);
+}
 
 const HOST = "127.0.0.1";
 const PORT = Number.parseInt(process.env.CCBAR_PORT || "0", 10); // 0 = random free port
@@ -111,6 +141,52 @@ const server = http.createServer(async (req, res) => {
   // --- Health ------------------------------------------------------------
   if (req.method === "GET" && pathname === "/health") {
     return sendJSON(res, 200, { ok: true, ts: Date.now() });
+  }
+
+  // --- The Atlas ---------------------------------------------------------
+  // Added BESIDE the Bar's endpoints, never on top of them (D4). Every handler
+  // delegates to a worker thread, so a 750ms parse of the corpus never stalls a
+  // held permission request on this loop (D2).
+  if (req.method === "GET" && pathname === "/atlas") {
+    return sendAtlasPage(res);
+  }
+  if (req.method === "GET" && pathname.startsWith("/atlas/api/")) {
+    const op = pathname.slice("/atlas/api/".length);
+    try {
+      if (op === "sessions") return sendJSON(res, 200, await atlasEngine.listSessions());
+      if (op === "tree") {
+        return sendJSON(res, 200, await atlasEngine.getTree(url.searchParams.get("id")));
+      }
+      if (op === "node") {
+        return sendJSON(res, 200, await atlasEngine.getNode(
+          url.searchParams.get("session"), url.searchParams.get("uuid")));
+      }
+      if (op === "search") {
+        const q = url.searchParams.get("q") || "";
+        const limit = Number.parseInt(url.searchParams.get("limit") || "50", 10);
+        return sendJSON(res, 200, await atlasEngine.search(q, { limit }));
+      }
+      if (op === "slice") {
+        const ref = url.searchParams.get("ref") || "";
+        return sendJSON(res, 200, slicer.sliceFor(ref));
+      }
+      if (op === "marks") {
+        return sendJSON(res, 200, { marks: marks.list(url.searchParams.get("session") || undefined) });
+      }
+    } catch (e) {
+      return sendJSON(res, 500, { ok: false, error: String(e?.message || e) });
+    }
+    return sendJSON(res, 404, { ok: false, error: `Unknown Atlas endpoint: ${op}` });
+  }
+  if (req.method === "POST" && pathname === "/atlas/api/mark") {
+    const { session, uuid, label } = await readBody(req);
+    try {
+      const m = marks.add({ sessionId: session, uuid, label });
+      marks.flush();
+      return sendJSON(res, 200, { ok: true, mark: m });
+    } catch (e) {
+      return sendJSON(res, 400, { ok: false, error: String(e?.message || e) });
+    }
   }
 
   // --- Live state --------------------------------------------------------
@@ -389,6 +465,8 @@ if (typeof arPoll.unref === "function") arPoll.unref();
 function shutdown() {
   log("shutting down");
   sessionMap.flush(); // a coalesced write may still be pending
+  marks.flush();
+  atlasEngine.shutdown();
   server.close(() => process.exit(0));
 }
 process.on("SIGINT", shutdown);

@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Footprint Atlas</title>
+<style>
+  /* ── harbor tokens (docs/footprint-product-plan.md §2) ───────────────── */
+  :root{
+    --ground:#d3dfe7; --panel:#fff; --sub:#eef3f7; --edge:rgba(33,47,56,.13); --edge2:rgba(33,47,56,.07);
+    --ink:#1b2730; --muted:#5d707d; --faint:#8a959e;
+    --work:#43617f; --needs:#9a4f12; --idle:#87a0ac; --fork:#4e8c6a; --crit:#c0503a;
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+    --serif:ui-serif,"New York",Georgia,serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme=light]){
+      --ground:#181f26; --panel:#1e262e; --sub:#232c35; --edge:rgba(228,235,240,.13); --edge2:rgba(228,235,240,.07);
+      --ink:#e4ebf0; --muted:#98a5b0; --faint:#6f7c87;
+      --work:#7fa8cc; --needs:#e2a04e; --idle:#7f8f9c; --fork:#6fbf95; --crit:#e07a5f;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--ground);color:var(--ink);font:13.5px/1.5 var(--sans);
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;
+  }
+  button{font:inherit;color:inherit;cursor:pointer}
+
+  /* ── chrome ──────────────────────────────────────────────────────────── */
+  header{
+    display:flex;align-items:center;gap:14px;padding:11px 16px;
+    border-bottom:1px solid var(--edge);background:var(--panel);flex:0 0 auto;
+  }
+  .brand{font:italic 400 17px/1 var(--serif);letter-spacing:-.01em}
+  .brand b{font-style:normal;font-weight:600;font-family:var(--sans);font-size:13px;color:var(--muted);margin-left:7px}
+  #q{
+    flex:1;max-width:520px;padding:7px 11px;border:1px solid var(--edge);border-radius:7px;
+    background:var(--sub);color:var(--ink);font:13px var(--sans);
+  }
+  #q:focus{outline:2px solid var(--work);outline-offset:-1px}
+  .stat{font:11.5px var(--mono);color:var(--faint);white-space:nowrap}
+
+  main{flex:1;display:flex;min-height:0}
+  #list{
+    width:340px;flex:0 0 auto;overflow-y:auto;border-right:1px solid var(--edge);
+    background:var(--panel);
+  }
+  #stage{flex:1;min-width:0;display:flex;flex-direction:column}
+
+  .grp{
+    font:italic 400 12.5px/1 var(--serif);color:var(--muted);
+    padding:13px 14px 6px;position:sticky;top:0;background:var(--panel);
+  }
+  .grp .n{font:600 10.5px var(--sans);color:var(--faint);margin-left:6px}
+
+  .row{
+    display:block;width:100%;text-align:left;border:0;background:none;
+    padding:8px 14px;border-bottom:1px solid var(--edge2);
+  }
+  .row:hover{background:var(--sub)}
+  .row[aria-current=true]{background:var(--sub);box-shadow:inset 3px 0 0 var(--work)}
+  .row .t{font-weight:600;font-size:13px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .p{color:var(--muted);font-size:11.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  .row .m{display:flex;gap:9px;margin-top:4px;font:11px var(--mono);color:var(--faint);align-items:center}
+  .chip{color:var(--needs)}
+  .chip.b{color:var(--fork)}
+
+  /* ── graph ───────────────────────────────────────────────────────────── */
+  #head{
+    padding:11px 16px;border-bottom:1px solid var(--edge);background:var(--panel);
+    display:flex;align-items:baseline;gap:12px;flex:0 0 auto;
+  }
+  #head h2{margin:0;font:600 14px var(--sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+  #head .meta{font:11.5px var(--mono);color:var(--faint);white-space:nowrap;flex:0 0 auto}
+  #graphWrap{flex:1;overflow:auto;position:relative}
+  svg{display:block}
+  .edge{stroke:var(--edge);stroke-width:1.5;fill:none}
+  .edge.live{stroke:var(--work);stroke-width:2}
+  .node{cursor:pointer}
+  .node .dot{stroke:var(--panel);stroke-width:2}
+  .node .lbl{font:11.5px var(--sans);fill:var(--muted)}
+  .node.live .lbl{fill:var(--ink)}
+  .node.sel .lbl{fill:var(--ink);font-weight:600}
+  .node.sel .dot{r:7;stroke:var(--work);stroke-width:2.5;opacity:1}
+  /* A raw browser focus ring on an SVG group reads as a bug; give focus and
+     selection a designed state instead. */
+  .node:focus{outline:none}
+  .node:focus .lbl{fill:var(--ink);text-decoration:underline}
+  .node.dead .dot{opacity:.62}
+  .node.dead .lbl{opacity:.62}
+  .frontier{stroke:var(--needs);stroke-dasharray:4 3;stroke-width:1.5}
+  .frontierLbl{font:italic 11px var(--serif);fill:var(--needs)}
+
+  /* ── inspector ───────────────────────────────────────────────────────── */
+  #insp{
+    width:380px;flex:0 0 auto;border-left:1px solid var(--edge);background:var(--panel);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  /* `display:flex` outranks the [hidden] attribute's display:none, so the panel
+     showed as an empty column with orphaned buttons until this was added. */
+  #insp[hidden]{display:none}
+  #insp .hd{padding:12px 15px;border-bottom:1px solid var(--edge)}
+  #insp .role{font:600 11px var(--sans);letter-spacing:.08em;text-transform:uppercase}
+  #insp .body{padding:13px 15px;overflow-y:auto;flex:1;white-space:pre-wrap;font-size:13px;line-height:1.55}
+  #insp .ref{font:11px var(--mono);color:var(--faint);word-break:break-all;margin-top:6px}
+  #insp .acts{padding:11px 15px;border-top:1px solid var(--edge);display:flex;gap:8px;flex-wrap:wrap}
+  .btn{
+    border:1px solid var(--edge);border-radius:6px;padding:6px 11px;background:var(--sub);
+    font:600 12px var(--sans);
+  }
+  .btn:hover{border-color:var(--work)}
+  .btn.pri{background:var(--work);border-color:var(--work);color:var(--panel)}
+
+  .empty{padding:40px 24px;text-align:center;color:var(--muted)}
+  .empty .q{font:italic 400 16px var(--serif);margin-bottom:6px}
+  .hit{padding:9px 14px;border-bottom:1px solid var(--edge2);cursor:pointer;display:block;width:100%;text-align:left;background:none;border-left:0;border-right:0;border-top:0}
+  .hit:hover{background:var(--sub)}
+  .hit mark{background:color-mix(in srgb,var(--needs) 26%,transparent);color:inherit;border-radius:2px}
+  dialog{border:0;border-radius:12px;padding:0;max-width:760px;width:92vw;background:var(--panel);color:var(--ink)}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  dialog .dh{padding:14px 18px;border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;align-items:center}
+  dialog .db{padding:16px 18px;max-height:65vh;overflow-y:auto;white-space:pre-wrap;font:13px/1.6 var(--sans)}
+  .toast{
+    position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:var(--ground);padding:9px 15px;border-radius:8px;
+    font:600 12.5px var(--sans);opacity:0;transition:opacity .18s;pointer-events:none;
+  }
+  .toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">Atlas<b>Footprint</b></span>
+  <input id="q" type="search" placeholder="Search every session…  (⌘K)" autocomplete="off" aria-label="Search all sessions">
+  <span class="stat" id="stat">loading…</span>
+</header>
+
+<main>
+  <div id="list" role="navigation" aria-label="Sessions"></div>
+  <div id="stage">
+    <div id="head"><h2 id="title">Select a session</h2><span class="meta" id="meta"></span></div>
+    <div id="graphWrap"><div class="empty"><div class="q">The map is quiet.</div><div>Pick a session on the left to see its shape.</div></div></div>
+  </div>
+  <aside id="insp" hidden>
+    <div class="hd"><div class="role" id="iRole"></div><div class="ref" id="iRef"></div></div>
+    <div class="body" id="iBody"></div>
+    <div class="acts">
+      <button class="btn pri" id="aQuote">Copy slice</button>
+      <button class="btn" id="aRead">Read full</button>
+      <button class="btn" id="aMark">Mark…</button>
+      <button class="btn" id="aRef">Copy ref</button>
+    </div>
+  </aside>
+</main>
+
+<dialog id="modal">
+  <div class="dh"><strong id="mTitle">Turn</strong><button class="btn" id="mClose">Close</button></div>
+  <div class="db" id="mBody"></div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const api = (p) => fetch(p).then((r) => r.json());
+let SESSIONS = [], CURRENT = null, TREE = null, SEL = null;
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const ago = (ms) => {
+  const s = (Date.now() - ms) / 1000;
+  if (s < 60) return "now";
+  if (s < 3600) return Math.round(s / 60) + "m";
+  if (s < 86400) return Math.round(s / 3600) + "h";
+  return Math.round(s / 86400) + "d";
+};
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("on"), 1900);
+}
+
+/* ── session list, grouped by project ─────────────────────────────────── */
+function renderList() {
+  const byProj = new Map();
+  for (const s of SESSIONS) {
+    if (!byProj.has(s.project)) byProj.set(s.project, []);
+    byProj.get(s.project).push(s);
+  }
+  const out = [];
+  for (const [proj, rows] of byProj) {
+    out.push(`<div class="grp">${esc(proj)}<span class="n">${rows.length}</span></div>`);
+    for (const s of rows) {
+      const chips = [];
+      // Branching is the common case (65% of real sessions) — surface it.
+      if (s.branches) chips.push(`<span class="chip b">⑂ ${s.branches}</span>`);
+      if (s.compactions) chips.push(`<span class="chip">⌁ ${s.compactions}</span>`);
+      out.push(
+        `<button class="row" data-id="${esc(s.id)}" aria-current="${s.id === CURRENT ? "true" : "false"}">
+           <span class="t">${esc(s.title)}</span>
+           <span class="p">${esc(s.preview)}</span>
+           <span class="m"><span>${s.turns} turns</span>${chips.join("")}<span style="margin-left:auto">${ago(s.updatedAt)}</span></span>
+         </button>`
+      );
+    }
+  }
+  $("#list").innerHTML = out.join("");
+}
+
+/* ── graph ────────────────────────────────────────────────────────────── */
+const COL_W = 150, ROW_H = 24, PAD = 22;
+
+function renderGraph(t) {
+  TREE = t;
+  if (!t.ok) { $("#graphWrap").innerHTML = `<div class="empty">${esc(t.error)}</div>`; return; }
+
+  // Lay out by depth (y) and branch lane (x). Siblings of a rewind get their own
+  // lane so an abandoned branch is visibly parallel, not hidden behind the live one.
+  const byId = new Map(t.nodes.map((n) => [n.id, n]));
+  const kids = new Map();
+  for (const e of t.edges) {
+    if (!kids.has(e.from)) kids.set(e.from, []);
+    kids.get(e.from).push(e.to);
+  }
+  const lane = new Map();
+  let nextLane = 0;
+  const roots = t.nodes.filter((n) => !t.edges.some((e) => e.to === n.id));
+  const walk = (id, l) => {
+    lane.set(id, l);
+    const ch = kids.get(id) || [];
+    ch.forEach((c, i) => walk(c, i === 0 ? l : ++nextLane));
+  };
+  roots.forEach((r) => walk(r.id, r === roots[0] ? 0 : ++nextLane));
+
+  const maxLane = Math.max(0, ...lane.values());
+  const W = PAD * 2 + (maxLane + 1) * COL_W + 760;
+  const H = PAD * 2 + t.nodes.length * ROW_H;
+  const pos = new Map();
+  t.nodes.forEach((n, i) => pos.set(n.id, { x: PAD + (lane.get(n.id) || 0) * COL_W, y: PAD + i * ROW_H }));
+
+  const parts = [`<svg width="${W}" height="${H}" role="img" aria-label="Conversation graph">`];
+  for (const e of t.edges) {
+    const a = pos.get(e.from), b = pos.get(e.to);
+    if (!a || !b) continue;
+    const live = byId.get(e.from)?.onLivePath && byId.get(e.to)?.onLivePath;
+    parts.push(`<path class="edge${live ? " live" : ""}" d="M${a.x},${a.y} C${a.x},${(a.y+b.y)/2} ${b.x},${(a.y+b.y)/2} ${b.x},${b.y}"/>`);
+  }
+  for (const n of t.nodes) {
+    const p = pos.get(n.id);
+    const col = n.role === "user" ? "var(--needs)" : "var(--work)";
+    const dead = n.onLivePath ? "" : " dead";
+    if (n.frontier) {
+      parts.push(`<line class="frontier" x1="${PAD-14}" y1="${p.y-14}" x2="${W-40}" y2="${p.y-14}"/>`);
+      parts.push(`<text class="frontierLbl" x="${PAD-10}" y="${p.y-19}">context frontier — compacted above</text>`);
+    }
+    // A turn with no prose but real tool calls should say WHAT it did, not
+    // "(no text) · 1 tool" — that line repeated hundreds of times in a real graph.
+    const toolNames = n.tools?.length ? [...new Set(n.tools)].join(", ") : "";
+    const label = n.preview
+      ? n.preview.slice(0, 96)
+      : (toolNames ? `⚙ ${toolNames}` : "·");
+    const tools = n.preview && toolNames ? `  ⚙ ${toolNames}` : "";
+    parts.push(
+      `<g class="node${dead}${n.onLivePath ? " live" : ""}${n.id === SEL ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(n.role)}: ${esc(label)}">
+         <circle class="dot" cx="${p.x}" cy="${p.y}" r="5" fill="${col}"/>
+         <text class="lbl" x="${p.x + 13}" y="${p.y + 4}">${esc(label)}${esc(tools)}</text>
+       </g>`
+    );
+  }
+  parts.push("</svg>");
+  $("#graphWrap").innerHTML = parts.join("");
+}
+
+/* ── inspector ────────────────────────────────────────────────────────── */
+async function select(id) {
+  SEL = id;
+  const n = TREE?.nodes.find((x) => x.id === id);
+  if (!n) return;
+  $("#insp").hidden = false;
+  $("#iRole").textContent = n.role === "user" ? "You" : "Claude";
+  $("#iRole").style.color = n.role === "user" ? "var(--needs)" : "var(--work)";
+  $("#iRef").textContent = `node://${CURRENT}/${n.id}`;
+  document.querySelectorAll(".node").forEach((g) => g.classList.toggle("sel", g.dataset.id === id));
+
+  // The tree payload only carries a short preview; fetch the whole turn so the
+  // inspector can actually be read rather than skimmed.
+  $("#iBody").textContent = n.preview || "…";
+  const full = await api(`/atlas/api/node?session=${encodeURIComponent(CURRENT)}&uuid=${encodeURIComponent(id)}`);
+  if (SEL !== id) return; // the user moved on while we were fetching
+  if (full.ok) {
+    const tools = full.tools?.length
+      ? "\n\n" + full.tools.map((t) => `⚙ ${t.name}(${t.keys.join(", ")})`).join("\n")
+      : "";
+    $("#iBody").textContent = (full.text || "(no text in this turn)") + tools;
+  }
+}
+
+async function openSession(id) {
+  CURRENT = id; SEL = null; $("#insp").hidden = true;
+  renderList();
+  const s = SESSIONS.find((x) => x.id === id);
+  $("#title").textContent = s ? s.title : id;
+  $("#graphWrap").innerHTML = `<div class="empty">Reading the session…</div>`;
+  const t = await api(`/atlas/api/tree?id=${encodeURIComponent(id)}`);
+  if (t.ok) {
+    const live = t.nodes.filter((n) => n.onLivePath).length;
+    const off = t.nodes.length - live;
+    $("#meta").textContent =
+      `${t.nodes.length} turns · ${live} on the live path` +
+      (off ? ` · ${off} on abandoned branches (dimmed)` : "");
+  } else $("#meta").textContent = "";
+  $("#graphWrap").scrollTop = 0;
+  renderGraph(t);
+}
+
+/* ── search ───────────────────────────────────────────────────────────── */
+let searchTimer;
+$("#q").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  searchTimer = setTimeout(async () => {
+    if (!q) { renderList(); return; }
+    const r = await api(`/atlas/api/search?q=${encodeURIComponent(q)}`);
+    if (!r.hits.length) { $("#list").innerHTML = `<div class="empty"><div class="q">Nothing found.</div></div>`; return; }
+    const rx = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig");
+    $("#list").innerHTML =
+      `<div class="grp">${r.hits.length} match${r.hits.length === 1 ? "" : "es"}${r.truncated ? "+" : ""}</div>` +
+      r.hits.map((h) =>
+        `<button class="hit" data-id="${esc(h.sessionId)}" data-node="${esc(h.uuid)}">
+           <span class="t" style="font-weight:600">${esc(h.title)}</span>
+           <span class="p" style="color:var(--muted);font-size:11.5px;display:block">${esc(h.snippet).replace(rx, "<mark>$1</mark>")}</span>
+           <span class="m" style="font:11px var(--mono);color:var(--faint)">${esc(h.project)} · ${ago(h.updatedAt)}</span>
+         </button>`).join("");
+  }, 180);
+});
+
+/* ── events ───────────────────────────────────────────────────────────── */
+$("#list").addEventListener("click", (e) => {
+  const row = e.target.closest(".row, .hit");
+  if (!row) return;
+  const id = row.dataset.id;
+  openSession(id).then(() => { if (row.dataset.node) select(row.dataset.node); });
+});
+$("#graphWrap").addEventListener("click", (e) => {
+  const g = e.target.closest(".node");
+  if (g) select(g.dataset.id);
+});
+$("#graphWrap").addEventListener("keydown", (e) => {
+  const g = e.target.closest(".node");
+  if (g && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); select(g.dataset.id); }
+});
+
+$("#aRef").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(`node://${CURRENT}/${SEL}`);
+  toast("Reference copied");
+});
+$("#aQuote").addEventListener("click", async () => {
+  const r = await api(`/atlas/api/slice?ref=${encodeURIComponent(`node://${CURRENT}/${SEL}`)}`);
+  if (!r.ok) return toast(r.error);
+  await navigator.clipboard.writeText(r.markdown);
+  toast(`Slice copied — ${r.turns} turns`);
+});
+$("#aRead").addEventListener("click", async () => {
+  const r = await api(`/atlas/api/slice?ref=${encodeURIComponent(`node://${CURRENT}/${SEL}`)}`);
+  $("#mTitle").textContent = r.ok ? `${r.turns} turns up to this point` : "Could not read";
+  $("#mBody").textContent = r.ok ? r.markdown : r.error;
+  $("#modal").showModal();
+});
+$("#mClose").addEventListener("click", () => $("#modal").close());
+$("#aMark").addEventListener("click", async () => {
+  const label = prompt("Name this turn so you can quote it later:");
+  if (!label) return;
+  const r = await fetch("/atlas/api/mark", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session: CURRENT, uuid: SEL, label }),
+  }).then((x) => x.json());
+  toast(r.ok ? `Marked “${label}”` : r.error);
+});
+addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); $("#q").focus(); }
+});
+
+/* ── boot ─────────────────────────────────────────────────────────────── */
+(async () => {
+  const d = await api("/atlas/api/sessions");
+  SESSIONS = d.sessions;
+  const turns = SESSIONS.reduce((n, s) => n + s.turns, 0);
+  const branched = SESSIONS.filter((s) => s.branches).length;
+  $("#stat").textContent = `${d.total} sessions · ${d.projects.length} projects · ${turns.toLocaleString()} turns · ${branched} branched`;
+  renderList();
+})();
+</script>
+</body>
+</html>

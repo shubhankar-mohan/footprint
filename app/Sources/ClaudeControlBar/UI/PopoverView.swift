@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import CCBarCore
 
 struct PopoverView: View {
@@ -62,6 +63,12 @@ struct PopoverView: View {
       Circle().fill(model.connected ? Theme.color(.working) : Color.secondary)
         .frame(width: 6, height: 6)
         .accessibilityLabel(model.connected ? "Connected to the bridge" : "Not connected")
+      // The Atlas is served by the bridge on its random port, so the URL is
+      // resolved at click time rather than hard-coded.
+      Button { openAtlas() } label: { Image(systemName: "map") }
+        .buttonStyle(.plain).foregroundStyle(.secondary)
+        .help("Open the Atlas — browse, search and graph every session")
+        .accessibilityLabel("Open the Atlas in your browser")
       Button { showStart = true } label: { Image(systemName: "plus") }
         .buttonStyle(.plain).foregroundStyle(.secondary).help("Start a session")
         .accessibilityLabel("Start a session")
@@ -125,6 +132,14 @@ struct PopoverView: View {
         .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
     }
     .padding(.horizontal, 13).padding(.vertical, 8)
+  }
+
+  // The bridge picks a random free port on boot and writes it to the port file,
+  // so the Atlas URL only exists at runtime.
+  private func openAtlas() {
+    guard let port = BridgePaths.port(),
+          let url = URL(string: "http://127.0.0.1:\(port)/atlas") else { return }
+    NSWorkspace.shared.open(url)
   }
 
   // Warmth, context, one primary action. The line is set in the same serif italic
