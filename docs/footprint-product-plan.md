@@ -37,7 +37,14 @@ Warm-blue ground, warm attention. Serif-italic section headers (a restrained map
 | Working / primary | `#43617F` | `#7FA8CC` |
 | Needs you / marker | `#9A4F12` | `#E2A04E` |
 | Idle | `#87A0AC` | `#7F8F9C` |
-| Fork | `#4E8C6A` | `#6FBF95` |
+| Fork | `#41785A` | `#6FBF95` |
+
+> **Fork green was darkened from `#4E8C6A` to `#41785A` (light only).**
+> Measured against the ground it actually sits on — the branch chip is 11px
+> text on `--panel` — the original failed WCAG AA at 3.97:1. The dark value
+> `#6FBF95` already passed and is unchanged. Same reasoning produced
+> `--idle-ink`, a text-safe companion to `--idle`.
+
 | Critical (last 20%) | `#C0503A` | `#E07A5F` |
 
 ### Rules (from the UX review, applied)

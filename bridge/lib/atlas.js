@@ -6,7 +6,10 @@
 //   • Sessions are depth-2 files only. Of 628 .jsonl files just 45 are sessions;
 //     the rest are subagent transcripts under <session>/subagents/. Listing them
 //     would show agents as if they were conversations.
-//   • 69% of sessions branch. A rewind leaves the abandoned reply on disk as a
+//   • ~18% of sessions branch at the ASK level (7 of 40 on the real corpus).
+//     The 69% figure from the schema spike counted branch points among all
+//     conversational turns, which is mostly assistant regenerations — not
+//     something the user did. A rewind leaves the abandoned reply on disk as a
 //     sibling, so the graph is a tree and the "live path" has to be computed,
 //     not assumed.
 //   • Only user/assistant records are turns; ~2/3 of records are metadata.
@@ -133,6 +136,54 @@ function isToolResultRecord(r) {
   return Array.isArray(c) && c.length > 0 && c.every((b) => b?.type === "tool_result");
 }
 
+// The single definition of "something the user asked".
+function isAskRecord(t) {
+  if (t.type !== "user") return false;
+  const text = extractText(t).trim();
+  return Boolean(text) && !isCommandEnvelope(text) && !isToolResultRecord(t);
+}
+
+// The ask graph: which asks exist, and which ask each one hangs off.
+//
+// Both the browser row's branch count and the drawn graph come from HERE. They
+// were two implementations once, and they disagreed in both directions — the
+// row claimed 14 branches where the graph drew none, and after a first attempt
+// at a fix the row claimed none where the graph drew one. The second bug was
+// mine: I walked a map built from the filtered conversational list, so a
+// metadata record sitting between two asks broke the chain. Relinking must walk
+// the FULL tree.
+function askGraph(tree) {
+  const all = [...tree.byUuid.values()];
+  const asks = conversationOnly(all).filter(isAskRecord);
+  const askIds = new Set(asks.map((a) => a.uuid));
+
+  // Walk up through everything in between — replies, tools, attachments,
+  // metadata — until the nearest ancestor that is itself an ask.
+  const graphParent = new Map();
+  for (const a of asks) {
+    let cur = a.parentUuid != null ? tree.byUuid.get(a.parentUuid) : null;
+    const seen = new Set();
+    while (cur && !seen.has(cur.uuid)) {
+      if (askIds.has(cur.uuid)) break;
+      seen.add(cur.uuid);
+      cur = cur.parentUuid != null ? tree.byUuid.get(cur.parentUuid) : null;
+    }
+    if (cur && askIds.has(cur.uuid)) graphParent.set(a.uuid, cur.uuid);
+  }
+  return { all, asks, askIds, graphParent };
+}
+
+// A fork is an ask with more than one ask hanging off it — exactly what the
+// graph draws as a split.
+function countAskForks(tree) {
+  const { graphParent } = askGraph(tree);
+  const kids = new Map();
+  for (const parent of graphParent.values()) kids.set(parent, (kids.get(parent) || 0) + 1);
+  let n = 0;
+  for (const c of kids.values()) if (c > 1) n++;
+  return n;
+}
+
 // Parse one session into everything both the browser row and the graph need.
 function parseSession(meta) {
   const hit = treeCache.get(meta.id);
@@ -145,14 +196,12 @@ function parseSession(meta) {
   const tree = buildTree(records);
   const turns = conversationOnly([...tree.byUuid.values()]);
 
-  // A branch point is a parent with more than one conversational child.
-  let branches = 0;
-  const kids = new Map();
-  for (const t of turns) {
-    if (t.parentUuid == null) continue;
-    kids.set(t.parentUuid, (kids.get(t.parentUuid) || 0) + 1);
-  }
-  for (const n of kids.values()) if (n > 1) branches++;
+  // A branch point is an ask with more than one ask hanging off it — the same
+  // forks the graph draws. Counting every conversational turn instead made this
+  // number include assistant retries, so the row said "14 branches" and the
+  // graph beside it showed zero. A count that contradicts the picture is worse
+  // than no count.
+  const branches = countAskForks(tree);
 
   const titleRec = records.find((r) => r.type === "custom-title" || r.type === "ai-title");
 
@@ -279,29 +328,9 @@ export async function getTree(sessionId) {
   // they rewound. Claude's replies and the tool chatter are the answer to a
   // node, not nodes themselves — drawing them buried 12 real asks under 979
   // boxes on a real session.
-  const isAsk = (t) => {
-    if (t.type !== "user") return false;
-    const text = extractText(t).trim();
-    return Boolean(text) && !isCommandEnvelope(text) && !isToolResultRecord(t);
-  };
-
-  const all = [...tree.byUuid.values()];
-  const asks = conversationOnly(all).filter(isAsk);
-  const askIds = new Set(asks.map((a) => a.uuid));
-
-  // Relink asks to each other through everything in between (replies, tools,
-  // attachments), so removing the machinery never breaks the chain.
-  const graphParent = new Map();
-  for (const a of asks) {
-    let cur = a.parentUuid != null ? tree.byUuid.get(a.parentUuid) : null;
-    const seen = new Set();
-    while (cur && !seen.has(cur.uuid)) {
-      if (askIds.has(cur.uuid)) break;
-      seen.add(cur.uuid);
-      cur = cur.parentUuid != null ? tree.byUuid.get(cur.parentUuid) : null;
-    }
-    if (cur && askIds.has(cur.uuid)) graphParent.set(a.uuid, cur.uuid);
-  }
+  // Same builder the browser row's branch count uses, so the number beside a
+  // session can never contradict the picture inside it.
+  const { all, asks, askIds, graphParent } = askGraph(tree);
 
   // Everything an ask produced: the descendants up to (not including) the next
   // ask. That is the answer we reveal when the node is clicked.

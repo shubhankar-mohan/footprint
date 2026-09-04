@@ -33,6 +33,14 @@ write(alpha, "s-branch", [
   rec("assistant", "b", "a", "row-lock queue on orders"),
   rec("user", "c", "b", "what next?"),
 ]);
+// A REAL user-level fork: one ask with two asks hanging off it. This is what a
+// branch chip should count — the same forks the graph draws.
+write(alpha, "s-realfork", [
+  rec("user", "r0", null, "start the migration"),
+  rec("assistant", "r1", "r0", "here is a plan"),
+  rec("user", "r2", "r1", "do it with a view"),
+  rec("user", "r3", "r1", "actually, do it with a trigger"),
+]);
 // A plain linear session in a different project.
 write(beta, "s-linear", [
   rec("user", "p", null, "add a healthcheck"),
@@ -53,7 +61,7 @@ const atlas = await import("../lib/atlas.js");
 test("listSessions finds sessions and groups them by project", async () => {
   const out = await atlas.listSessions();
   const ids = out.sessions.map((s) => s.id).sort();
-  assert.deepEqual(ids, ["s-branch", "s-compact", "s-linear"]);
+  assert.deepEqual(ids, ["s-branch", "s-compact", "s-linear", "s-realfork"]);
   assert.ok(out.projects.includes("alpha") || out.projects.some((p) => p.includes("alpha")));
 });
 
@@ -66,7 +74,10 @@ test("each session carries the counts the browser row needs", async () => {
   const out = await atlas.listSessions();
   const s = out.sessions.find((x) => x.id === "s-branch");
   assert.equal(s.turns, 4, "user+assistant turns only, metadata excluded");
-  assert.equal(s.branches, 1, "one parent has two conversational children");
+  // Zero, not one. `a` has two ASSISTANT children — a regeneration, not the
+  // user asking two different things — and the graph correctly draws no fork
+  // there. This assertion used to say 1 and encoded the bug.
+  assert.equal(s.branches, 0, "an assistant retry is not a branch the user made");
   assert.ok(s.project, "project name for grouping");
   assert.ok(s.updatedAt > 0);
   assert.ok(typeof s.preview === "string" && s.preview.length > 0, "a line to show in the row");
@@ -445,4 +456,33 @@ test("only the superseded side of a rewind is abandoned", async () => {
   assert.equal(t.nodes.find((n) => n.id === "r0").onLivePath, true, "the shared ancestor is live");
   assert.equal(t.nodes.find((n) => n.id === "newQ").onLivePath, true);
   assert.equal(t.nodes.find((n) => n.id === "oldQ").onLivePath, false);
+});
+
+// ── the branch count must agree with the picture ──────────────────────────
+// The session list showed "⑂ 14" for a session whose graph draws zero forks.
+// Both numbers were "true": the list counted branch points among ALL
+// conversational turns (assistant retries included), the graph draws forks
+// between the questions you actually asked. A count that disagrees with the
+// picture beside it is worse than no count, so the list now counts asks.
+test("branches counts forks between asks, not assistant retries", async () => {
+  const { listSessions, getTree } = await import("../lib/atlas.js");
+  const d = await listSessions();
+  const withBranches = d.sessions.filter((s) => s.branches > 0).slice(0, 3);
+  for (const s of withBranches) {
+    const t = await getTree(s.id);
+    if (!t.ok) continue;
+    const kids = new Map();
+    for (const e of t.edges) kids.set(e.from, (kids.get(e.from) || 0) + 1);
+    const forksInGraph = [...kids.values()].filter((n) => n > 1).length;
+    assert.equal(
+      s.branches, forksInGraph,
+      `session ${s.id}: list says ${s.branches} branches, graph draws ${forksInGraph}`
+    );
+  }
+});
+
+test("a genuine user fork is still counted", async () => {
+  const out = await atlas.listSessions();
+  const s = out.sessions.find((x) => x.id === "s-realfork");
+  assert.equal(s.branches, 1, "one ask with two asks under it is a real fork");
 });

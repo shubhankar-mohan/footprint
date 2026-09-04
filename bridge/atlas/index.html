@@ -20,6 +20,9 @@
        lighter values fell to 4.27:1 and 3.97:1. */
 
     --fs-xs:11px; --fs-sm:12px; --fs-base:13px; --fs-lg:15px; --fs-xl:17px;
+    /* Display numerals — the forest's stat cards. A sixth step, added
+       deliberately rather than leaving a bare 24px off the scale. */
+    --fs-num:24px;
     --s0:2px; --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
     --r1:6px; --r2:10px; --r3:999px;
 
@@ -68,7 +71,7 @@
   }
   /* The mark is the one element allowed to carry the ink weight up here;
      it tints with the theme because it inherits currentColor. */
-  .brand .logo{fill:currentColor;flex:0 0 auto;opacity:.92}
+  .brand .logo{fill:currentColor;flex:0 0 auto}
   .brand b{
     font-style:normal;font-weight:600;font-family:var(--sans);font-size:var(--fs-sm);
     color:var(--muted);margin-left:var(--s2);letter-spacing:.06em;text-transform:uppercase;
@@ -223,7 +226,7 @@
   .fSub{font:var(--fs-base) var(--sans);color:var(--muted);margin-bottom:var(--s5);max-width:64ch}
   .fStats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:var(--s3);margin-bottom:var(--s5)}
   .fStat{background:var(--panel);border:1px solid var(--edge);border-radius:var(--r2);padding:var(--s3) var(--s4)}
-  .fStat .v{font:italic 400 24px/1 var(--serif);color:var(--ink);font-variant-numeric:tabular-nums}
+  .fStat .v{font:italic 400 var(--fs-num)/1 var(--serif);color:var(--ink);font-variant-numeric:tabular-nums}
   .fStat .k{margin-top:var(--s1);font:500 var(--fs-xs) var(--sans);color:var(--muted)}
   .fStat.flag .v{color:var(--needs)}
   .fProj{margin-bottom:var(--s4)}
@@ -477,7 +480,9 @@ function renderList() {
     out.push(`<div class="grp">${esc(proj)}<span class="n">${rows.length}</span></div>`);
     for (const s of rows) {
       const chips = [];
-      // Branching is the common case (65% of real sessions) — surface it.
+      // Branching is uncommon — ~18% of real sessions, once you count forks
+      // between asks rather than assistant regenerations. Worth surfacing
+      // precisely because it is rare and interesting.
       if (s.branches) chips.push(`<span class="chip b">⑂ ${s.branches}</span>`);
       if (s.compactions) chips.push(`<span class="chip">⌁ ${s.compactions}</span>`);
       out.push(
