@@ -170,7 +170,17 @@ const server = http.createServer(async (req, res) => {
       if (op === "search") {
         const q = url.searchParams.get("q") || "";
         const limit = Number.parseInt(url.searchParams.get("limit") || "50", 10);
-        return sendJSON(res, 200, await atlasEngine.search(q, { limit }));
+        // Scoping contract (see lib/atlas.js search()):
+        //   project  — restrict to one project, by name
+        //   scope    — "all" (default here; the Atlas is a browser with no
+        //              ambient project) or "project" with `project` set
+        //   groupBySession — collapse a session's many hits into one row
+        return sendJSON(res, 200, await atlasEngine.search(q, {
+          limit,
+          project: url.searchParams.get("project") || null,
+          scope: url.searchParams.get("scope") || "all",
+          groupBySession: url.searchParams.get("group") !== "0",
+        }));
       }
       if (op === "slice") {
         const ref = url.searchParams.get("ref") || "";

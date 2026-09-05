@@ -91,7 +91,14 @@ async function call(op, args) {
 export const listSessions = () => call("listSessions");
 export const getTree = (sessionId) => call("getTree", { sessionId });
 export const getNode = (sessionId, uuid) => call("getNode", { sessionId, uuid });
-export const search = (query, opts = {}) => call("search", { query, limit: opts.limit });
+export const search = (query, opts = {}) =>
+  call("search", {
+    query,
+    limit: opts.limit,
+    project: opts.project ?? null,
+    scope: opts.scope ?? "all",
+    groupBySession: opts.groupBySession !== false,
+  });
 
 export async function shutdown() {
   if (!worker) return;

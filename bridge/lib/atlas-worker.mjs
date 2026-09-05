@@ -21,7 +21,12 @@ const OPS = {
   listSessions: () => atlas.listSessions(),
   getTree: (args) => atlas.getTree(args?.sessionId),
   getNode: (args) => atlas.getNode(args?.sessionId, args?.uuid),
-  search: (args) => atlas.search(args?.query, { limit: args?.limit }),
+  search: (args) => atlas.search(args?.query, {
+    limit: args?.limit,
+    project: args?.project ?? null,
+    scope: args?.scope ?? "all",
+    groupBySession: args?.groupBySession !== false,
+  }),
 };
 
 parentPort.on("message", async (msg) => {
