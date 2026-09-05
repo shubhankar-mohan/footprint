@@ -19,6 +19,7 @@ import { URL } from "node:url";
 import {
   writePort,
   readPort,
+  releasePort,
   ensureDir,
   CCBAR_DIR,
   EVENT_LOG,
@@ -81,7 +82,36 @@ function log(...args) {
 // path, so a slow disk must never stall a held tool call. See lib/eventlog.js.
 const appendEventLog = eventlog.append;
 
+// Reconcile "needs" before every snapshot, so a stale badge cannot survive even
+// one read of /state.
+//
+// Only sessions ALREADY in "needs" are statted — usually none, at most a
+// handful — so this stays cheap on a path that runs on every SSE broadcast.
+function sweepNeeds() {
+  const needy = sessions.all().filter((s) => s.state === "needs");
+  if (!needy.length) return [];
+
+  const pendingIds = new Set(pending.list().map((p) => p.sessionId).filter(Boolean));
+
+  // A transcript that advanced after the session started needing us is the
+  // precise signal that it was answered in the terminal — far better than a
+  // timeout, which is only the backstop for a session that died outright.
+  const activityAt = new Map();
+  for (const s of needy) {
+    if (pendingIds.has(s.id)) continue; // deterministic already, no stat needed
+    try {
+      const fp = slicer.findTranscript(s.id);
+      if (fp) activityAt.set(s.id, fs.statSync(fp).mtimeMs);
+    } catch { /* no transcript found — fall back to the TTL */ }
+  }
+
+  const cleared = sessions.sweepStaleNeeds({ pendingIds, activityAt });
+  if (cleared.length) log(`cleared ${cleared.length} stale needs: ${cleared.join(", ")}`);
+  return cleared;
+}
+
 function snapshot() {
+  sweepNeeds();
   return {
     sessions: sessions.all(),
     pending: pending.list(),
@@ -589,7 +619,10 @@ function shutdown() {
   sessionMap.flush(); // a coalesced write may still be pending
   marks.flush();
   titles.flush();
+  notes.flush(); // coalesced at 800ms — a note typed just before quit would be lost
   atlasEngine.shutdown();
+  // Give up our claim on the port so the next reader is not sent to a ghost.
+  releasePort();
   server.close(() => process.exit(0));
 }
 process.on("SIGINT", shutdown);

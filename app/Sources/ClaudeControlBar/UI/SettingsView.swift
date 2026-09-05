@@ -32,6 +32,8 @@ struct SettingsView: View {
       }
 
       Divider().padding(.vertical, 2)
+      quoting
+      Divider().padding(.vertical, 2)
       preferences
       footer
     }
@@ -191,6 +193,76 @@ struct SettingsView: View {
       Text("Injects “continue” into a tmux-owned session when its usage limit resets.")
         .font(.system(size: minType)).foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  // MARK: - Quoting (MCP)
+
+  // The MCP server is bundled inside the .app but was never registered, so
+  // quoting an earlier turn silently didn't exist for anyone who installed with
+  // Homebrew. Same shape as Monitoring: say what changes, do it, report back,
+  // and name the restart that makes it take effect.
+  @ViewBuilder private var quoting: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      Text("Quoting")
+        .font(.system(size: 12, weight: .semibold, design: .serif)).italic()
+
+      if let outcome = model.lastMCPOutcome {
+        mcpOutcomeView(outcome)
+      } else {
+        Text("Registers Footprint's MCP server with Claude Code, so a live session can quote a turn from an earlier one back to itself.")
+          .font(.system(size: minType)).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        HStack {
+          Button(model.mcpInstalling ? "Enabling…" : "Enable quoting in Claude Code") {
+            model.installMCP()
+          }
+          .buttonStyle(.bordered)
+          .disabled(model.mcpInstalling)
+          .accessibilityLabel("Enable quoting in Claude Code")
+          .accessibilityHint("Registers Footprint's MCP server for every project")
+          Spacer()
+        }
+        .font(.system(size: 12, weight: .semibold))
+      }
+    }
+  }
+
+  @ViewBuilder private func mcpOutcomeView(_ outcome: MCPInstaller.Outcome) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      switch outcome {
+      case .enabled, .alreadyEnabled:
+        fact("✓",
+             outcome == .alreadyEnabled ? "Quoting was already enabled" : "Quoting is enabled",
+             "Registered for every project as “footprint”.")
+        fact("!", "Now start a new Claude Code session",
+             "MCP servers load when a session starts. Sessions already open won't see it.",
+             warn: true)
+      case .failed(let why):
+        Text("That didn't work.")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(Theme.critical)
+        Text(why)
+          .font(.system(size: minType, design: .monospaced))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+          .textSelection(.enabled)
+        Text("You can run this yourself instead:")
+          .font(.system(size: minType)).foregroundStyle(.secondary)
+        Text(MCPInstaller.shellOneLiner())
+          .font(.system(size: minType, design: .monospaced))
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+          .textSelection(.enabled)
+          .accessibilityLabel("Command to register the MCP server by hand")
+      }
+      HStack {
+        Button("Got it") { model.clearMCPOutcome() }
+          .buttonStyle(.bordered)
+          .accessibilityLabel("Dismiss the quoting result")
+        Spacer()
+      }
+      .font(.system(size: 12, weight: .semibold))
     }
   }
 

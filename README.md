@@ -163,6 +163,21 @@ changes before writing anything:
 
 `brew uninstall footprint` removes the hooks for you before deleting the app.
 
+### Enable quoting (the MCP server)
+
+The MCP server ships inside the app but isn't registered with Claude Code until you ask
+for it — it's what lets a live session quote a turn from an earlier one. **Settings ▸
+Quoting ▸ Enable quoting in Claude Code** does it for you; the equivalent one-liner is:
+
+```bash
+claude mcp add --scope user footprint -- /opt/homebrew/bin/node \
+  /Applications/Footprint.app/Contents/Resources/bridge/mcp-server.mjs
+```
+
+`--scope user` registers it for every project rather than only the directory you happen
+to be in. **MCP servers load when a session starts** — Claude Code sessions already
+running won't see it until they're restarted.
+
 This build is unsigned and not notarized. Homebrew verifies its checksum and then clears
 the macOS quarantine flag so it will open — a deliberate tradeoff for a free tool, stated
 plainly rather than hidden.

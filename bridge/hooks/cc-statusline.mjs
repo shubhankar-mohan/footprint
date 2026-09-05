@@ -7,7 +7,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const PORT_FILE = path.join(os.homedir(), ".claude-control-bar", "port");
+// CCBAR_DIR mirrors the bridge, the CLI and lib/paths.js. Without it the hook
+// path could not be tested against an isolated bridge — it silently posted to
+// whatever real bridge happened to be running, which is exactly how a "the
+// hooks are broken" conclusion got reached from a green system.
+const CCBAR_DIR = process.env.CCBAR_DIR || path.join(os.homedir(), ".claude-control-bar");
+const PORT_FILE = path.join(CCBAR_DIR, "port");
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -19,12 +24,29 @@ function readStdin() {
   });
 }
 
+// The port file records its owner so a crashed bridge cannot strand a dead port.
+// Deliberately duplicated rather than imported: hooks run on every Claude Code
+// event and must stay standalone and dependency-free. Both formats are parsed —
+// a bare integer is what older installs wrote, and an upgrade must not silently
+// stop reporting sessions.
 function readPort() {
+  let raw;
   try {
-    return Number.parseInt(fs.readFileSync(PORT_FILE, "utf8").trim(), 10);
+    raw = fs.readFileSync(PORT_FILE, "utf8").trim();
   } catch {
     return null;
   }
+  if (!raw) return null;
+  if (raw.startsWith("{")) {
+    try {
+      const o = JSON.parse(raw);
+      return Number.isFinite(o?.port) ? o.port : null;
+    } catch {
+      return null;
+    }
+  }
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : null;
 }
 
 async function main() {

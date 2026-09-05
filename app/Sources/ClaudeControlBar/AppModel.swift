@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import ServiceManagement
+import UserNotifications
 import CCBarCore
 
 // What happened the last time the user enabled or removed monitoring. Drives the
@@ -23,14 +24,30 @@ final class AppModel: ObservableObject {
   @Published var connected = false
   @Published var hooksInstalled = false
   @Published var lastHookOutcome: HookOutcome?
+  @Published var lastMCPOutcome: MCPInstaller.Outcome?
+  @Published var mcpInstalling = false
 
   private let supervisor = BridgeSupervisor()
   private let client = BridgeClient()
   private let differ = SessionStore()
   private var streamTask: Task<Void, Never>?
+  // Held strongly: UNUserNotificationCenter.delegate is a weak reference.
+  private var notificationRouter: NotificationRouter?
+
+  /// The port of the bridge this app spawned, when it is still running. Trusted
+  /// over the port file, which any crashed bridge may have written last.
+  var livePort: Int? { supervisor.livePort }
 
   init() {
     supervisor.start()
+    // Before the app finishes launching, and before the first notification is
+    // posted: a delegate set later never receives the taps that arrived first,
+    // and categories registered later don't reach notifications already sent.
+    let router = NotificationRouter(model: self)
+    notificationRouter = router
+    if Bundle.main.bundleIdentifier != nil {
+      UNUserNotificationCenter.current().delegate = router
+    }
     Notifier.requestAuth()
     hooksInstalled = HookInstaller.isInstalled()
     streamTask = Task { @MainActor [weak self] in
@@ -40,8 +57,20 @@ final class AppModel: ObservableObject {
         self.snapshot = self.differ.snapshot
         self.connected = true
         for id in newly {
-          let proj = self.snapshot.sessions.first { $0.id == id }?.project ?? "A session"
-          Notifier.needsYou(project: proj)
+          let session = self.snapshot.sessions.first { $0.id == id }
+          // Allow / Deny only make sense when a request is actually being held
+          // open for this session. A Notification-driven "needs" has nothing to
+          // decide, so it gets a tap-to-reveal notification and no buttons.
+          let pending = self.snapshot.pending.first { $0.sessionId == id }
+          Notifier.needsYou(
+            project: session?.project ?? "A session",
+            sessionId: id,
+            requestId: pending?.id,
+            detail: pending.flatMap { p -> String? in
+              let parts = [p.tool, p.detail].compactMap { $0 }.filter { !$0.isEmpty }
+              return parts.isEmpty ? nil : parts.joined(separator: ": ")
+            }
+          )
         }
       }
     }
@@ -63,6 +92,13 @@ final class AppModel: ObservableObject {
         await client.reveal(sessionId: name, session: name, tier: "owned", app: terminal, cwd: cwd)
       }
     }
+  }
+
+  /// Tap-through from a notification, which carries only an id. Resolves the
+  /// session and hands off to the same reveal a row click uses.
+  func revealSession(id: String) {
+    guard let s = snapshot.sessions.first(where: { $0.id == id }) else { return }
+    revealSession(s)
   }
 
   func revealSession(_ s: Session) {
@@ -100,6 +136,24 @@ final class AppModel: ObservableObject {
   }
 
   func clearHookOutcome() { lastHookOutcome = nil }
+
+  // MARK: - MCP (quoting)
+
+  // Spawns the claude CLI, so it stays off the main thread like the hook scripts.
+  func installMCP() {
+    guard !mcpInstalling else { return }
+    mcpInstalling = true
+    lastMCPOutcome = nil
+    DispatchQueue.global().async {
+      let outcome = MCPInstaller.install()
+      DispatchQueue.main.async {
+        self.mcpInstalling = false
+        self.lastMCPOutcome = outcome
+      }
+    }
+  }
+
+  func clearMCPOutcome() { lastMCPOutcome = nil }
 
   // Verify against the file rather than trusting the exit path: the script can
   // print an error and still exit 0 (e.g. ~/.claude missing entirely).

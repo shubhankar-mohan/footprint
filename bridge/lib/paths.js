@@ -57,17 +57,76 @@ export function ensureDir() {
   fs.mkdirSync(CCBAR_DIR, { recursive: true });
 }
 
-export function readPort() {
+// ── the port file ────────────────────────────────────────────────────────
+// It used to hold a bare integer with no owner, which meant any bridge that had
+// ever run — including one that crashed — could leave a value behind. Observed
+// live: the file said 58930, nothing was listening, and the menu-bar "Open the
+// Atlas" button opened a dead tab. The port now records WHO owns it so a reader
+// can tell a live bridge from a ghost.
+
+function ownerAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
-    const raw = fs.readFileSync(PORT_FILE, "utf8").trim();
-    const n = Number.parseInt(raw, 10);
-    return Number.isFinite(n) ? n : null;
+    process.kill(pid, 0); // signal 0 tests existence without touching the process
+    return true;
+  } catch (e) {
+    return e.code === "EPERM"; // alive, just not ours to signal
+  }
+}
+
+export function readPort() {
+  let raw;
+  try {
+    raw = fs.readFileSync(PORT_FILE, "utf8").trim();
   } catch {
     return null;
   }
+  if (!raw) return null;
+
+  // Current format: {"port":N,"pid":N,"startedAt":N}
+  if (raw.startsWith("{")) {
+    try {
+      const o = JSON.parse(raw);
+      if (!Number.isFinite(o?.port)) return null;
+      // No pid recorded means we cannot prove it is stale, so defer to the
+      // caller's /health probe rather than refusing a possibly-live bridge —
+      // the same treatment the legacy bare-integer format gets. Only a pid we
+      // can positively show is dead counts as stale.
+      if (!Number.isFinite(o?.pid)) return o.port;
+      return ownerAlive(o.pid) ? o.port : null;
+    } catch {
+      return null; // truncated or corrupt
+    }
+  }
+
+  // Legacy format: a bare integer, written by older installs. No owner is
+  // recorded, so it cannot be validated — return it rather than break an
+  // upgrade, and let the caller probe /health.
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : null;
 }
 
 export function writePort(port) {
   ensureDir();
-  fs.writeFileSync(PORT_FILE, String(port), "utf8");
+  fs.writeFileSync(
+    PORT_FILE,
+    JSON.stringify({ port, pid: process.pid, startedAt: Date.now() }),
+    "utf8"
+  );
+}
+
+// Clean up on exit — but only our own entry. Deleting a port file another
+// bridge now owns would strand IT, which is the bug we are fixing.
+export function releasePort() {
+  try {
+    const raw = fs.readFileSync(PORT_FILE, "utf8").trim();
+    if (raw.startsWith("{")) {
+      const o = JSON.parse(raw);
+      if (o?.pid !== process.pid) return false;
+    }
+    fs.unlinkSync(PORT_FILE);
+    return true;
+  } catch {
+    return false;
+  }
 }

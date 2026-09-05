@@ -49,5 +49,24 @@ let again = store.apply(Data(#"{"sessions":[{"id":"a","state":"needs"}],"pending
 check(again.isEmpty, "does not re-report a session already in needs")
 check(store.snapshot.aggregate == .needs, "store holds latest snapshot")
 
+// 5. Port file: bare integer (today's format) and JSON with a pid (the bridge's
+// new one). A pid that isn't running means a crashed bridge left the file behind.
+check(BridgePaths.parsePortFile("54321\n") == 54321, "parses a bare integer port")
+check(BridgePaths.parsePortFile("  ") == nil, "empty port file is nothing")
+check(BridgePaths.parsePortFile("garbage") == nil, "unparseable port file is nothing")
+check(BridgePaths.parsePortFile("0") == nil, "port 0 is not a port")
+let alive = ProcessInfo.processInfo.processIdentifier
+check(
+  BridgePaths.parsePortFile("{\"port\":54321,\"pid\":\(alive),\"startedAt\":1}") == 54321,
+  "parses JSON port whose pid is alive")
+check(
+  BridgePaths.parsePortFile("{\"port\":54321,\"pid\":999999,\"startedAt\":1}") == nil,
+  "JSON port whose pid is dead is stale")
+check(
+  BridgePaths.parsePortFile("{\"port\":54321}") == 54321,
+  "JSON port with no pid is taken at face value")
+check(BridgePaths.isProcessAlive(alive), "isProcessAlive sees this process")
+check(!BridgePaths.isProcessAlive(0), "isProcessAlive rejects pid 0")
+
 print(failures == 0 ? "\nALL CHECKS PASSED ✓" : "\n\(failures) FAILURES ✗")
 exit(failures == 0 ? 0 : 1)

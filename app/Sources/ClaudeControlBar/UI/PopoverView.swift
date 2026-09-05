@@ -7,6 +7,9 @@ struct PopoverView: View {
   let onDecide: (String, String) -> Void
   @State private var showSettings = false
   @State private var showStart = false
+  // Set when the Atlas can't be opened, so the failure is said rather than
+  // swallowed into a dead browser tab.
+  @State private var atlasProblem: String?
   // Set by either exit from onboarding, so the first-run screen is shown once
   // and never returns — turning monitoring on later lives behind the gear.
   @AppStorage("cc.hasSeenOnboarding") private var hasSeenOnboarding = false
@@ -33,6 +36,7 @@ struct PopoverView: View {
   private var main: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
+      atlasBanner
       Divider()
 
       ScrollView {
@@ -145,12 +149,52 @@ struct PopoverView: View {
     .padding(.horizontal, 13).padding(.vertical, 8)
   }
 
-  // The bridge picks a random free port on boot and writes it to the port file,
-  // so the Atlas URL only exists at runtime.
+  // The Atlas lives on whatever port the bridge is on, so the URL only exists at
+  // runtime. Two ports are candidates: the one the supervisor spawned (known
+  // first-hand) and the one in the port file (a mutable global a crashed bridge
+  // may have written last). Neither is opened without asking /health first —
+  // a browser tab pointed at a dead port is a worse answer than a sentence.
   private func openAtlas() {
-    guard let port = BridgePaths.port(),
-          let url = URL(string: "http://127.0.0.1:\(port)/atlas") else { return }
-    NSWorkspace.shared.open(url)
+    let spawned = model.livePort
+    Task { @MainActor in
+      atlasProblem = nil
+      var candidates: [Int] = []
+      if let spawned { candidates.append(spawned) }
+      // Fall back to the file: a bridge started outside this app (a dev one, or
+      // one left by an earlier launch) is still a live Atlas.
+      if let filed = BridgePaths.port(), filed != spawned { candidates.append(filed) }
+      for port in candidates {
+        if await BridgeSupervisor.isReachable(port: port) {
+          if let url = URL(string: "http://127.0.0.1:\(port)/atlas") {
+            NSWorkspace.shared.open(url)
+          }
+          return
+        }
+      }
+      atlasProblem = "The Atlas isn't answering — the bridge isn't running yet. Give it a moment and try again."
+    }
+  }
+
+  // Honest, in place, dismissible. Theme.critical rather than the amber: amber
+  // means a session is waiting on you, and nothing here is.
+  @ViewBuilder private var atlasBanner: some View {
+    if let message = atlasProblem {
+      HStack(alignment: .top, spacing: 7) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.system(size: 11)).foregroundStyle(Theme.critical)
+        Text(message)
+          .font(.system(size: 11)).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 4)
+        Button { atlasProblem = nil } label: { Image(systemName: "xmark") }
+          .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.tertiary)
+          .accessibilityLabel("Dismiss this message")
+      }
+      .padding(.horizontal, 13).padding(.vertical, 7)
+      .background(Theme.critical.opacity(0.10))
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("The Atlas could not be opened. \(message)")
+    }
   }
 
   // Warmth, context, one primary action. The line is set in the same serif italic

@@ -88,11 +88,11 @@ export function upsertFromHook(payload) {
       existing.tool = null;
       break;
     case "PermissionRequest":
-      existing.state = "needs";
+      enterNeeds(existing, "permission");
       existing.tool = payload.tool_name || existing.tool;
       break;
     case "Notification":
-      existing.state = "needs";
+      enterNeeds(existing, "notification");
       break;
     case "SessionEnd":
       // Only reaches here for reason === "clear" (real closes removed above).
@@ -141,12 +141,66 @@ export function registerDiscovered({ id, cwd, lastLine, updatedAt }) {
   );
 }
 
+// Entering "needs" records WHEN and WHY, because the two reasons have different
+// exits and only one of them is deterministic.
+function enterNeeds(s, reason) {
+  if (s.state !== "needs") s.needsSince = now();
+  s.needsSince ??= now();
+  s.needsReason = reason;
+  s.state = "needs";
+}
+
+function leaveNeeds(s, state) {
+  s.state = state;
+  s.needsSince = null;
+  s.needsReason = null;
+  s.updatedAt = now();
+}
+
 export function markNeeds(id, on = true) {
   const s = sessions.get(id);
-  if (s) {
-    s.state = on ? "needs" : "working";
-    s.updatedAt = now();
+  if (!s) return;
+  if (on) { enterNeeds(s, "permission"); s.updatedAt = now(); }
+  else leaveNeeds(s, "working");
+}
+
+// ── stale "needs" ────────────────────────────────────────────────────────
+// Observed live: three sessions sat in "needs" for 9-17 hours with ZERO pending
+// requests, because nothing expires the state. A session enters "needs" from a
+// hook and leaves only on a decision or a later hook — so if the terminal closes
+// or the session dies, the amber badge stays on forever. An alert that is always
+// on is an alert you stop reading, which breaks the one promise the Bar makes.
+//
+// This reconciles against reality rather than blindly timing out. Only the last
+// branch is a guess; the first two are facts.
+export const STALE_NEEDS_MS = 20 * 60 * 1000;
+
+export function sweepStaleNeeds({ pendingIds = new Set(), activityAt = new Map(), now: t = now() } = {}) {
+  const cleared = [];
+  for (const s of sessions.values()) {
+    if (s.state !== "needs") continue;
+
+    // 1. A held permission request is deterministic: valid exactly while the
+    //    pending row exists, however long the user takes to come back.
+    if (pendingIds.has(s.id)) continue;
+
+    const since = s.needsSince ?? s.updatedAt ?? t;
+
+    // 2. The session moved on after it started needing us — they answered in
+    //    the terminal. Precise, not a guess.
+    const moved = activityAt.get(s.id);
+    if (moved && moved > since) { leaveNeeds(s, "idle"); cleared.push(s.id); continue; }
+
+    // 3. Backstop for a session that simply died without a closing hook.
+    if (t - since > STALE_NEEDS_MS) { leaveNeeds(s, "idle"); cleared.push(s.id); }
   }
+  return cleared;
+}
+
+// Test hook: age a session's needs state without waiting twenty minutes.
+export function _setNeedsSince(id, ms) {
+  const s = sessions.get(id);
+  if (s) s.needsSince = ms;
 }
 
 // Clearing "needs" depends on WHAT resolved the permission request:
@@ -162,8 +216,8 @@ export function markNeeds(id, on = true) {
 export function resolveNeeds(id, decision) {
   const s = sessions.get(id);
   if (!s) return;
-  s.state = decision === "ask" ? "needs" : "working";
-  s.updatedAt = now();
+  if (decision === "ask") { enterNeeds(s, "notification"); s.updatedAt = now(); }
+  else leaveNeeds(s, "working");
 }
 
 export function registerOwned(id, { cwd, tmux, terminalApp }) {
