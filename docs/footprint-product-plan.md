@@ -1,7 +1,8 @@
 # Footprint — Product Plan
 
 **Status:** Locked concept v1 · **Owner:** Shubhankar · **Last updated:** 22 Aug 2026
-**Mockup:** https://claude.ai/code/artifact/66a69ed0-0ec3-4578-8a51-28f6765c2fac
+**Mockup:** worked out in interactive HTML in the author's private workspace; the
+design it settled is recorded in §2 (tokens) and in the shipped code.
 **Supersedes:** the standalone `ccgraph` draft (`~/Documents/Shubhankar/ccgraph`, branch `plan`) — ccgraph is now the **Atlas** surface of Footprint.
 
 ---

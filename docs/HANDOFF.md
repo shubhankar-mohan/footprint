@@ -167,17 +167,18 @@ Faces: New York serif (section headers, italic) · SF (UI) · SF Mono (code/refs
 
 ---
 
-## 6. Mockup gallery (interactive HTML)
+## 6. Mockup gallery
 
-The definitive visuals. Open these to see the design; they're the spec:
+The design was worked out in a set of interactive HTML mockups: the unified
+product (Bar + Atlas + Engine) with a live graph and full-read modal, the locked
+"harbor" direction in both themes with its tokens, three bolder alternatives
+(Ink / Phosphor / Claybar), and a set of ground studies (parchment, warm,
+warm-blue, textures).
 
-- **Unified product (Bar + Atlas + Engine)** — the master mockup, interactive graph + full-read modal:
-  https://claude.ai/code/artifact/66a69ed0-0ec3-4578-8a51-28f6765c2fac
-- **Bar — locked harbor direction (both themes + tokens):**
-  https://claude.ai/code/artifact/e49fa9f1-eef7-449c-806e-41b09d62488a
-- Bar — three bolder directions (Ink / Phosphor / Claybar): https://claude.ai/code/artifact/b26d13fc-d90d-4600-9c45-b005f721a3c0
-- Ground studies (parchment / warm / warm-blue / textures): d5657757… , 96967671… , 564a54c7… , dc7f252e… (see chat history)
-- Bar — original refine pass: https://claude.ai/code/artifact/a2941190-165d-48d4-81c5-8e218b2c4aa5
+Those live in the author's private workspace and are deliberately not linked
+here — this repo is public. Everything they settled is captured in code and in
+§5 (design system) and §7 (roadmap) below, which are the actual spec. The ASCII
+schematics that follow are the shareable record of the layouts.
 
 ### ASCII — the Bar popover (harbor)
 ```
