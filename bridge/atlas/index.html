@@ -13,11 +13,20 @@
      too so CSS and JS cannot disagree about it. */
   :root{
     --ground:#d3dfe7; --panel:#fff; --sub:#eef3f7; --edge:rgba(33,47,56,.13); --edge2:rgba(33,47,56,.07);
-    --ink:#1b2730; --muted:#5d707d; --faint:#67727c;
-    --work:#43617f; --needs:#9a4f12; --idle:#87a0ac; --idle-ink:#586e7a; --fork:#41785a; --crit:#c0503a;
-    /* --idle-ink and --fork are measured against the ground they actually sit
-       on, not against white: the abandoned badge sits on --sub, where the
-       lighter values fell to 4.27:1 and 3.97:1. */
+    --ink:#1b2730; --muted:#516270; --faint:#55606d;
+    /* --muted is darker than it looks like it needs to be because it has to
+       clear AA on the DARKEST ground it ever sits on. Earlier sweeps only
+       ever caught it on --panel (5.15:1) and missed the empty state inside
+       #graphWrap, which sits on --ground: there it was 3.79:1. Now 4.65
+       on --ground, 5.64 on --sub, 6.30 on --panel. */
+    --work:#43617f; --needs:#8a460f; --idle:#87a0ac; --idle-ink:#4f606c; --fork:#396a4f; --crit:#a63f2b;
+    /* Every light ink above is measured against the DARKEST ground it can sit
+       on (--ground #d3dfe7), not against white. Measuring against --panel is
+       what let a whole class of failures through: the empty state inside
+       #graphWrap and the forest legend both sit on --ground, where --muted was
+       3.79:1, --faint 3.62, --fork 3.81 and --crit 3.48. All pairs now clear
+       4.5:1 on ground, sub and panel alike. Dark mode already passed and is
+       unchanged. */
 
     --fs-xs:11px; --fs-sm:12px; --fs-base:13px; --fs-lg:15px; --fs-xl:17px;
     /* Display numerals — the forest's stat cards. A sixth step, added
@@ -235,7 +244,7 @@
     font:italic 400 var(--fs-lg) var(--serif);color:var(--ink);
   }
   .fProjHd span{font:var(--fs-xs) var(--mono);color:var(--faint)}
-  .fBars{display:flex;gap:3px;align-items:flex-end;height:56px}
+  .fBars{display:flex;gap:var(--s1);align-items:flex-end;height:56px}
   .fBar{
     width:16px;border-radius:2px;background:var(--work);border:0;padding:0;
     cursor:pointer;flex:0 0 auto;
@@ -264,6 +273,37 @@
   }
   .hit:hover{background:var(--sub)}
   .hit mark{background:color-mix(in srgb,var(--needs) 26%,transparent);color:inherit;border-radius:2px}
+  /* A hit is three facts, in the order a reader wants them: what matched, the
+     text around it, and where it lives. They used to be one — every row was
+     headlined by its session's FIRST ask, so the top five results for a common
+     word were five copies of the same sentence. */
+  .hit .t{font-weight:600;font-size:var(--fs-base);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hit .s{display:block;color:var(--muted);font-size:var(--fs-xs);margin-top:var(--s0)}
+  /* --muted, not --faint: a hit's meta line sits on --sub as soon as the row
+     is hovered, and --faint measures 4.40:1 there in the light theme. --muted
+     is 4.61:1 on the same ground and 5.63:1 in the dark. */
+  .hit .m{
+    display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s2);
+    margin-top:var(--s1);font:var(--fs-xs) var(--mono);color:var(--muted);
+  }
+  /* The project a hit came from. Weight, not colour, carries the emphasis: on
+     a machine holding both personal and employer code this is the label that
+     matters most, and it is never the thing to make quietest. */
+  .hit .m .proj{font-weight:600}
+  .hit .m .in{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:15ch;flex:0 1 auto}
+  /* "+3 more in this session" is information, not an alarm — deliberately NOT
+     amber, which is reserved for the context frontier and the search
+     highlight. */
+  .hit .m .when{margin-left:auto;flex:0 0 auto}
+
+  /* Project filter. A plain select: one control, keyboard-native, and it
+     inherits the theme instead of the browser's default white. */
+  #proj{
+    flex:0 0 auto;max-width:190px;padding:var(--s1) var(--s2);
+    border:1px solid var(--edge);border-radius:var(--r1);
+    background:var(--sub);color:var(--ink);font:var(--fs-sm) var(--sans);
+  }
+  #proj.on{border-color:var(--work);color:var(--work);font-weight:600}
 
   dialog{border:0;border-radius:var(--r2);padding:0;max-width:760px;width:92vw;background:var(--panel);color:var(--ink)}
   dialog::backdrop{background:rgba(0,0,0,.45)}
@@ -321,6 +361,11 @@
     <span>Footprint<b>Atlas</b></span>
   </span>
   <input id="q" type="search" placeholder="Search every session…  (⌘K)" autocomplete="off" aria-label="Search all sessions">
+  <!-- Default is every project: the Atlas is a browser and has no ambient
+       project to inherit, unlike the MCP server which does. -->
+  <select id="proj" aria-label="Limit to one project">
+    <option value="">All projects</option>
+  </select>
   <button class="btn" id="aForest" aria-pressed="false"
           title="Every session at once">Forest</button>
   <span class="stat" id="stat" role="status">loading…</span>
@@ -393,6 +438,10 @@
 <script>
 const $ = (s) => document.querySelector(s);
 let SESSIONS = [], CURRENT = null, TREE = null, SEL = null;
+// "" means every project. Otherwise the exact project DIRECTORY — never the
+// friendly label, which collides: on a real machine -side-api-server and
+// -work-api-server are both called "api-server".
+let PROJECT = "";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const ago = (ms) => {
@@ -463,6 +512,43 @@ function askFor(title, label, value = "") {
   });
 }
 
+/* ── project filter ───────────────────────────────────────────────────────
+   Names for the dropdown. A project's friendly name is its last path segment,
+   which is not unique — two different directories can both be "api-server". So the
+   OPTION VALUE is always the exact directory, and only the visible name grows
+   leftwards, and only for the ones that actually clash. */
+function shortNames(dirs) {
+  const seg = (d) => String(d || "").replace(/^-/, "").split("-").filter(Boolean);
+  const name = new Map(dirs.map((d) => [d, seg(d).slice(-1).join("/") || d]));
+  for (let depth = 2; depth <= 6; depth++) {
+    const byName = new Map();
+    for (const d of dirs) {
+      const n = name.get(d);
+      if (!byName.has(n)) byName.set(n, []);
+      byName.get(n).push(d);
+    }
+    const clashing = [...byName.values()].filter((g) => g.length > 1).flat();
+    if (!clashing.length) break;
+    for (const d of clashing) name.set(d, seg(d).slice(-depth).join("/") || d);
+  }
+  return name;
+}
+
+function renderProjects() {
+  const dirs = [...new Set(SESSIONS.map((s) => s.projectDir).filter(Boolean))];
+  const names = shortNames(dirs);
+  const sel = $("#proj");
+  const ordered = dirs.sort((a, b) => names.get(a).localeCompare(names.get(b)));
+  sel.innerHTML =
+    `<option value="">All projects</option>` +
+    ordered.map((d) => `<option value="${esc(d)}">${esc(names.get(d))}</option>`).join("");
+  // A directory can vanish between loads; fall back to showing everything
+  // rather than leaving a filter selected that matches nothing.
+  if (PROJECT && !dirs.includes(PROJECT)) PROJECT = "";
+  sel.value = PROJECT;
+  sel.classList.toggle("on", Boolean(PROJECT));
+}
+
 /* ── session list, grouped by project ─────────────────────────────────── */
 function renderList() {
   if (!SESSIONS.length) {
@@ -470,8 +556,14 @@ function renderList() {
       <div>Run Claude Code once and it will appear here.</div></div>`;
     return;
   }
+  const shown = PROJECT ? SESSIONS.filter((s) => s.projectDir === PROJECT) : SESSIONS;
+  if (!shown.length) {
+    $("#list").innerHTML = `<div class="empty"><div class="q">Nothing in this project.</div>
+      <div>Choose “All projects” to see the rest.</div></div>`;
+    return;
+  }
   const byProj = new Map();
-  for (const s of SESSIONS) {
+  for (const s of shown) {
     if (!byProj.has(s.project)) byProj.set(s.project, []);
     byProj.get(s.project).push(s);
   }
@@ -945,6 +1037,7 @@ $("#aRename").addEventListener("click", async () => {
     const r = await post("/atlas/api/rename", { session: CURRENT, name: next });
     if (!r.ok) return toast(r.error || "Could not rename this session");
     SESSIONS = (await api("/atlas/api/sessions")).sessions;
+    renderProjects();
     renderList();
     setTitle(SESSIONS.find((x) => x.id === CURRENT));
     toast(r.title ? `Renamed to “${r.title}”` : "Original name restored");
@@ -972,31 +1065,61 @@ $("#aReply").addEventListener("click", async () => {
   }
 });
 
-/* ── search ───────────────────────────────────────────────────────────── */
+/* ── search ───────────────────────────────────────────────────────────────
+   One row per session, headlined by what matched rather than by the session's
+   first ask, labelled with its project, and honest about how much more is
+   hiding behind it. Before this, "schema" returned 50 rows from 8 sessions and
+   the top five were the same sentence five times. */
+async function runSearch() {
+  const q = $("#q").value.trim();
+  if (!q) { renderList(); return; }
+  const params = new URLSearchParams({ q });
+  if (PROJECT) { params.set("scope", "project"); params.set("project", PROJECT); }
+  let r;
+  try {
+    r = await api(`/atlas/api/search?${params}`);
+  } catch (err) {
+    $("#list").innerHTML = errorBlock("Search failed.", errMsg(err), "search");
+    return;
+  }
+  if (!r.hits.length) {
+    $("#list").innerHTML = `<div class="empty"><div class="q">Nothing found.</div>${
+      PROJECT ? `<div>Only this project was searched. Choose “All projects” to look wider.</div>` : ""
+    }</div>`;
+    return;
+  }
+  const rx = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig");
+  const n = r.hits.length;
+  const head = `${n} session${n === 1 ? "" : "s"}${r.truncated ? "+" : ""}`;
+  $("#list").innerHTML =
+    `<div class="grp">${head}${PROJECT ? ` in ${esc($("#proj").selectedOptions[0]?.text || "")}` : ""}</div>` +
+    r.hits.map((h) => {
+      const more = (h.matchCount || 1) - 1;
+      return `<button class="hit" data-id="${esc(h.sessionId)}" data-node="${esc(h.uuid)}">
+         <span class="t">${esc(h.title)}</span>
+         <span class="s">${esc(h.snippet).replace(rx, "<mark>$1</mark>")}</span>
+         <span class="m">
+           <span class="proj">${esc(h.project)}</span>
+           <span class="in">in ${esc(h.sessionTitle || "")}</span>
+           ${more > 0 ? `<span class="more">+${more} more in this session</span>` : ""}
+           <span class="when">${ago(h.updatedAt)}</span>
+         </span>
+       </button>`;
+    }).join("");
+}
+
 let searchTimer;
-$("#q").addEventListener("input", (e) => {
+$("#q").addEventListener("input", () => {
   clearTimeout(searchTimer);
-  const q = e.target.value.trim();
-  searchTimer = setTimeout(async () => {
-    if (!q) { renderList(); return; }
-    let r;
-    try {
-      r = await api(`/atlas/api/search?q=${encodeURIComponent(q)}`);
-    } catch (err) {
-      $("#list").innerHTML = errorBlock("Search failed.", errMsg(err), "search");
-      return;
-    }
-    if (!r.hits.length) { $("#list").innerHTML = `<div class="empty"><div class="q">Nothing found.</div></div>`; return; }
-    const rx = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig");
-    $("#list").innerHTML =
-      `<div class="grp">${r.hits.length} match${r.hits.length === 1 ? "" : "es"}${r.truncated ? "+" : ""}</div>` +
-      r.hits.map((h) =>
-        `<button class="hit" data-id="${esc(h.sessionId)}" data-node="${esc(h.uuid)}">
-           <span class="t" style="font-weight:600">${esc(h.title)}</span>
-           <span class="p" style="color:var(--muted);font-size:var(--fs-xs);display:block">${esc(h.snippet).replace(rx, "<mark>$1</mark>")}</span>
-           <span class="m" style="font:var(--fs-xs) var(--mono);color:var(--faint)">${esc(h.project)} · ${ago(h.updatedAt)}</span>
-         </button>`).join("");
-  }, 180);
+  searchTimer = setTimeout(runSearch, 180);
+});
+
+// Changing the filter re-runs whatever is on screen — the search if there is a
+// query, the plain list otherwise. One click, either way.
+$("#proj").addEventListener("change", (e) => {
+  PROJECT = e.target.value;
+  $("#proj").classList.toggle("on", Boolean(PROJECT));
+  if ($("#q").value.trim()) runSearch(); else renderList();
 });
 
 /* ── events ───────────────────────────────────────────────────────────── */
@@ -1097,6 +1220,7 @@ async function boot() {
     const branched = SESSIONS.filter((s) => s.branches).length;
     stat.textContent =
       `${d.total} sessions · ${d.projects.length} projects · ${turns.toLocaleString()} turns · ${branched} branched`;
+    renderProjects();
     renderList();
   } catch (e) {
     // Before this existed the status read "loading…" forever and the list sat

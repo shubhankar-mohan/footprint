@@ -53,9 +53,44 @@ function rememberTree(id, mtime, parsed) {
 }
 
 // Project dir names are the cwd with slashes turned into dashes.
-function projectLabel(dirName) {
+//
+// More precisely: every character that is not a letter or a digit becomes a
+// dash, so `/Users/you/work/api/push_notifications` is stored as
+// `-Users-you-work-api-push-notifications`. Verified against a real corpus —
+// 21 of 21 sessions whose `cwd` record could be read encode exactly this way,
+// including the underscore and the one directory with a space in its name.
+//
+// This is the ONE place that mapping lives. lib/mcp.js imports it rather than
+// writing a second copy that could drift.
+export function projectDirName(cwd) {
+  return String(cwd || "").replace(/[^a-zA-Z0-9]/g, "-");
+}
+
+// The human name for a project: the last path segment. It is what the browser
+// groups by and what a person recognises — but it is LOSSY and it collides.
+// Two different directories collapse to the same label whenever they share a
+// last segment — `-Users-you-work-api` and `-Users-you-side-api` are both
+// "api", and a checkout beside its own test fixture (`-proj` / `-proj-test-proj`)
+// collides too. Both shapes occur on real machines. Anywhere a mistake would
+// cross a data boundary, compare the directory, never the label.
+export function projectLabel(dirName) {
   const parts = dirName.replace(/^-/, "").split("-").filter(Boolean);
   return parts[parts.length - 1] || dirName;
+}
+
+// Which project is the caller standing in? `known` is false when that cwd has
+// no transcripts on disk, and every caller is expected to fail SAFE on it —
+// a boundary that silently refuses everything is worse than one that
+// over-shares, because the second is visible and the first is not.
+export function projectForCwd(cwd) {
+  const dir = projectDirName(cwd);
+  let known = false;
+  try {
+    known = Boolean(dir) && fs.statSync(path.join(PROJECTS(), dir)).isDirectory();
+  } catch {
+    known = false;
+  }
+  return { dir, name: projectLabel(dir), known };
 }
 
 // Depth 2 only — see the note above about subagents.
@@ -269,6 +304,8 @@ function summaryOf(meta) {
 const rowOf = (p) => ({
   id: p.id,
   project: p.project,
+  // The exact directory beside the friendly label, because labels collide.
+  projectDir: p.dir,
   title: p.title,
   derivedTitle: p.derivedTitle,
   renamed: p.renamed,
@@ -466,30 +503,170 @@ export async function getNode(sessionId, uuid) {
   };
 }
 
-export async function search(query, { limit = 50 } = {}) {
-  const q = (query || "").trim().toLowerCase();
-  if (!q) return { hits: [], query: "" };
+// How many times `needle` occurs in `hay`. Both are already lowercased.
+function countOf(hay, needle) {
+  if (!needle) return 0;
+  let n = 0;
+  let at = hay.indexOf(needle);
+  while (at !== -1) {
+    n++;
+    at = hay.indexOf(needle, at + needle.length);
+  }
+  return n;
+}
 
-  const hits = [];
-  for (const meta of sessionFiles()) {
-    const parsed = parseSession(meta);
-    for (const t of conversationOnly([...parsed.tree.byUuid.values()])) {
-      const text = extractText(t);
-      const at = text.toLowerCase().indexOf(q);
-      if (at === -1) continue;
-      const start = Math.max(0, at - 60);
-      hits.push({
-        sessionId: parsed.id,
-        project: parsed.project,
-        title: parsed.title,
-        uuid: t.uuid,
-        role: t.type,
-        updatedAt: parsed.updatedAt,
-        snippet: text.slice(start, start + SNIPPET_CHARS).replace(/\s+/g, " ").trim(),
-      });
-      if (hits.length >= limit) return { hits, query: q, truncated: true };
+// Which of the query's words this turn contains, and how often in total.
+//
+// Ranking is deliberately two-tiered:
+//   1. how many DISTINCT query words appear — a turn holding "widget layer"
+//      beats one that only says "widget", however many times it says it;
+//   2. then the raw number of occurrences.
+// It is not normalised by length. The snippet is a fixed 180-character window,
+// so a long turn with several hits still produces a better window than a short
+// turn with one; dividing by length would hand the row to a passing mention in
+// a one-line reply. The cost is that a pasted file full of the term can win —
+// which, on the real corpus, is usually the right answer anyway.
+function scoreMatch(lowerText, terms) {
+  let distinct = 0;
+  let total = 0;
+  for (const t of terms) {
+    const n = countOf(lowerText, t);
+    if (n) {
+      distinct++;
+      total += n;
     }
   }
+  return { distinct, total };
+}
+
+const beats = (a, b) => (a.distinct !== b.distinct ? a.distinct > b.distinct : a.total > b.total);
+
+// The ask a match sits under — the nearest user prompt at or above it.
+//
+// This is what titles a search row. The old code titled every row with the
+// session's FIRST ask, so on the real corpus the top five rows for "schema"
+// were five copies of the same sentence. The enclosing ask answers the question
+// a reader actually has — "what were we doing when this came up" — and it
+// varies with the match rather than with the file.
+function enclosingAsk(tree, node) {
+  let cur = node;
+  const seen = new Set();
+  while (cur && !seen.has(cur.uuid)) {
+    seen.add(cur.uuid);
+    if (isAskRecord(cur)) return cur;
+    cur = cur.parentUuid != null ? tree.byUuid.get(cur.parentUuid) : null;
+  }
+  return null;
+}
+
+const oneLine = (s, n = 80) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
+
+// Search every session on disk.
+//
+//   project        — a project to restrict to, named EITHER by its friendly
+//                    label ("api-server") or by its exact directory
+//                    ("-Users-you-side-api-server"). Labels collide; directories do
+//                    not, so anything enforcing a boundary should pass a
+//                    directory.
+//   scope          — "all" (default) searches everything; "project" restricts.
+//                    "project" with no project named cannot scope, so it does
+//                    not pretend to: it searches everything and says scope
+//                    "all" in the reply. Silently returning nothing would look
+//                    exactly like having no history.
+//   groupBySession — default true. Collapses a session's many matches into one
+//                    row carrying its best match and a matchCount, so the list
+//                    stops showing the same conversation five times.
+export async function search(query, { limit = 50, project = null, scope = "all", groupBySession = true } = {}) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return { hits: [], query: "", scope: "all", project: null, grouped: groupBySession !== false };
+
+  const wanted = project ? String(project) : null;
+  const scoped = scope === "project" && Boolean(wanted);
+  const terms = [...new Set(q.split(/\s+/).filter(Boolean))];
+
+  const hits = [];
+  let truncated = false;
+
+  for (const meta of sessionFiles()) {
+    // Scope BEFORE parsing: an out-of-scope project costs nothing to skip, and
+    // this is what keeps a scoped search cheap on a machine with many projects.
+    if (scoped && meta.project !== wanted && meta.dir !== wanted) continue;
+
+    const parsed = parseSession(meta);
+    const turns = conversationOnly([...parsed.tree.byUuid.values()]);
+
+    let matchCount = 0;
+    let best = null;
+    let bestScore = null;
+
+    for (const t of turns) {
+      const text = extractText(t);
+      const lower = text.toLowerCase();
+      const at = lower.indexOf(q);
+      if (at === -1) continue;
+      matchCount++;
+
+      const score = scoreMatch(lower, terms);
+      // `beats` is strict, so an equal contest keeps the turn we saw first —
+      // the earliest mention, which is where the topic was introduced and is
+      // stable from run to run.
+      const isBest = !best || beats(score, bestScore);
+      if (isBest) {
+        best = { turn: t, at, text };
+        bestScore = score;
+      }
+
+      if (!groupBySession) {
+        hits.push(hitOf(parsed, t, text, at, 1));
+        if (hits.length >= limit) {
+          truncated = true;
+          break;
+        }
+      }
+    }
+
+    if (truncated) break;
+
+    if (groupBySession && best) {
+      hits.push(hitOf(parsed, best.turn, best.text, best.at, matchCount));
+      if (hits.length >= limit) {
+        // One session per row, so a full row means a full session: nothing is
+        // half-counted when we stop here.
+        truncated = true;
+        break;
+      }
+    }
+  }
+
   hits.sort((a, b) => b.updatedAt - a.updatedAt);
-  return { hits, query: q };
+  return {
+    hits,
+    query: q,
+    scope: scoped ? "project" : "all",
+    project: scoped ? wanted : null,
+    grouped: groupBySession !== false,
+    ...(truncated ? { truncated: true } : {}),
+  };
+
+  function hitOf(parsed, turn, text, at, matchCount) {
+    const start = Math.max(0, at - 60);
+    const ask = enclosingAsk(parsed.tree, turn);
+    // A rename writes the sidecar, not the transcript, so the cached parse can
+    // hold a stale name. Read the override here, the same way withTitle does.
+    const sessionTitle = titles.get(parsed.id) || parsed.derivedTitle || parsed.title;
+    return {
+      sessionId: parsed.id,
+      project: parsed.project,
+      projectDir: parsed.dir,
+      // What matched, and separately which conversation it was in. The browser
+      // shows both; they used to be the same string.
+      title: oneLine(ask ? extractText(ask) : text) || sessionTitle,
+      sessionTitle,
+      uuid: turn.uuid,
+      role: turn.type,
+      updatedAt: parsed.updatedAt,
+      matchCount,
+      snippet: text.slice(start, start + SNIPPET_CHARS).replace(/\s+/g, " ").trim(),
+    };
+  }
 }
