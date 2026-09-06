@@ -6,6 +6,7 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 
 export const HOME = os.homedir();
 
@@ -74,6 +75,20 @@ function ownerAlive(pid) {
   }
 }
 
+// Epoch millis when a pid started, or null if it cannot be determined.
+// `ps -o lstart=` is the portable-enough answer on macOS.
+function processStartedAt(pid) {
+  try {
+    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8", timeout: 2000,
+    }).trim();
+    const t = Date.parse(out);
+    return Number.isFinite(t) ? t : null;
+  } catch {
+    return null; // unknown → fall back to the pid check alone
+  }
+}
+
 export function readPort() {
   let raw;
   try {
@@ -93,7 +108,16 @@ export function readPort() {
       // the same treatment the legacy bare-integer format gets. Only a pid we
       // can positively show is dead counts as stale.
       if (!Number.isFinite(o?.pid)) return o.port;
-      return ownerAlive(o.pid) ? o.port : null;
+      if (!ownerAlive(o.pid)) return null;
+      // A pid alone is not proof: pids get recycled, so a long-dead bridge's
+      // number can belong to something entirely unrelated. startedAt was being
+      // written and never read — it is exactly what closes that. A process
+      // that started BEFORE the port file was written cannot be its author.
+      if (Number.isFinite(o?.startedAt)) {
+        const began = processStartedAt(o.pid);
+        if (began !== null && began < o.startedAt - 2000) return null;
+      }
+      return o.port;
     } catch {
       return null; // truncated or corrupt
     }

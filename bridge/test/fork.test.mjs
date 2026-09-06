@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { buildForkPlan, forkCommand } from "../lib/fork.js";
-import { claudeCommand } from "../scripts/tmux.mjs";
+import { buildForkPlan } from "../lib/fork.js";
+import { claudeCommand, safeSessionName } from "../scripts/tmux.mjs";
 
 const SLICE = "## You asked\nbuild a thing\n\n## Claude\nok\n";
 
@@ -45,27 +45,23 @@ test("an oversized slice is capped so the seed prompt stays sendable", () => {
   assert.equal(p.truncated, true);
 });
 
-test("forkCommand produces a tmux invocation in the right directory", () => {
-  const p = buildForkPlan({ sessionId: "s1", uuid: "u1", cwd: "/tmp/proj", slice: SLICE, turns: 2 });
-  const c = forkCommand(p, "fp-fork-1", "/tmp/seed.md");
-  assert.equal(c.file, "tmux");
-  assert.ok(c.args.includes("fp-fork-1"));
-  assert.ok(c.args.includes("/tmp/proj"));
+// These used to assert on fork.js helpers that PRODUCTION NEVER CALLED — the
+// real path is server.js → tmux.launch → claudeCommand. A test that guards a
+// function nobody runs would keep passing while the live path became
+// vulnerable, which is worse than no test. Now they exercise tmux.launch.
+test("a tmux session name is sanitised where sessions are actually created", () => {
+  // The name reaches AppleScript later as `tmux attach -t ${session}`.
+  assert.equal(safeSessionName('s" \ndo shell script "id'), null);
+  assert.equal(safeSessionName("cc-abc123"), "cc-abc123");
+  assert.equal(safeSessionName("fp-fork-m1x2y3"), "fp-fork-m1x2y3");
 });
 
-// The seed is multi-line. send-keys would press Enter at every newline and
-// submit it as dozens of partial prompts, so it has to arrive as one argument.
-test("the seed reaches claude as a single argument, never as keystrokes", () => {
-  const p = buildForkPlan({ sessionId: "s1", uuid: "u1", cwd: "/tmp", slice: SLICE, turns: 2 });
-  const c = forkCommand(p, "n", "/tmp/seed.md");
-  const cmd = c.args[c.args.length - 1];
-  assert.match(cmd, /^claude /);
-  assert.ok(cmd.includes("/tmp/seed.md"));
-  assert.ok(!c.args.includes("send-keys"));
+test("a name that cannot be trusted is refused, not silently repaired", () => {
+  for (const bad of ["a b", "a;b", 'a"b', "a\nb", "`a`", "$(id)"]) {
+    assert.equal(safeSessionName(bad), null, JSON.stringify(bad));
+  }
 });
 
-// Command substitution output is not re-scanned by the shell, so even a seed
-// full of quotes and backticks cannot break out of it.
 test("claudeCommand reads a prompt file rather than interpolating the prompt", () => {
   const cmd = claudeCommand({ promptFile: "/tmp/x y.md" });
   assert.ok(cmd.includes("cat"));
@@ -74,8 +70,4 @@ test("claudeCommand reads a prompt file rather than interpolating the prompt", (
 });
 
 // Session names go into a shell command; anything exotic must not survive.
-test("the tmux session name is sanitised", () => {
-  const p = buildForkPlan({ sessionId: "s1", uuid: "u1", cwd: "/tmp", slice: SLICE, turns: 1 });
-  const c = forkCommand(p, "bad; rm -rf /");
-  assert.ok(!c.args.some((a) => a.includes(";")));
-});
+

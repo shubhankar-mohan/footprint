@@ -58,3 +58,18 @@ test("a JSON port file with no pid is returned, not refused", () => {
   fs.writeFileSync(PORT_FILE, JSON.stringify({ port: 8791, startedAt: Date.now() }));
   assert.equal(readPort(), 8791, "unprovable is not the same as stale");
 });
+
+// A pid alone is not proof of ownership — pids are recycled, so a long-dead
+// bridge's number can belong to something unrelated and readPort() would hand
+// out a port with nothing listening. startedAt closes that: a process older
+// than the port file cannot have written it.
+test("a recycled pid does not pass as the bridge", () => {
+  // pid 1 (launchd) is always alive and always started long before now.
+  fs.writeFileSync(PORT_FILE, JSON.stringify({ port: 8791, pid: 1, startedAt: Date.now() }));
+  assert.equal(readPort(), null, "an older process cannot be the author of a newer file");
+});
+
+test("the real owner still reads back", () => {
+  writePort(51234);   // our own pid, startedAt = now
+  assert.equal(readPort(), 51234);
+});

@@ -19,11 +19,27 @@ let timer = null;
 
 function load() {
   if (notes) return notes;
+  let raw = null;
   try {
-    const parsed = JSON.parse(fs.readFileSync(NOTES, "utf8"));
+    raw = fs.readFileSync(NOTES, "utf8");
+  } catch {
+    notes = {};            // simply absent — nothing to preserve
+    return notes;
+  }
+  try {
+    const parsed = JSON.parse(raw);
     notes = parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    notes = {};            // missing or corrupt → start empty, never throw
+    // Present but unreadable. Starting empty is correct in memory, but the next
+    // flush would write that empty object straight over the file and destroy
+    // every note the user ever wrote — silently. A truncated file is exactly
+    // what a crash mid-write leaves behind, so keep it aside first.
+    notes = {};
+    try {
+      const aside = `${NOTES}.corrupt-${Date.now()}`;
+      fs.renameSync(NOTES, aside);
+      console.error(`[notes] ${NOTES} was unreadable; kept a copy at ${aside}`);
+    } catch { /* if even that fails, losing the write is better than throwing */ }
   }
   return notes;
 }

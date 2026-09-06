@@ -54,7 +54,19 @@ export async function hasTmux() {
 // We stamp CCBAR_OWNED_TMUX / CCBAR_TERMINAL into the session env so claude's own
 // hooks report the ownership — that way claude's session_id becomes the single
 // Owned row (no separate placeholder), revealable in the right terminal.
+// A session name is carried onward into AppleScript by reveal.mjs
+// (`tmux attach -t ${session}`), so it must be trustworthy from the moment a
+// session is created — not merely at the point it is used. Refused, never
+// repaired: a caller with a real name has nothing to repair.
+export function safeSessionName(name) {
+  if (typeof name !== "string" || !name) return null;
+  return /^[A-Za-z0-9_-]{1,64}$/.test(name) ? name : null;
+}
+
 export async function launch({ cwd, name, flags, terminal }) {
+  if (name && !safeSessionName(name)) {
+    throw new Error(`Refusing to create a tmux session named ${JSON.stringify(name)}.`);
+  }
   const session = name || `cc-${shortId()}`;
   const cmd = claudeCommand(flags);
   const args = ["new", "-d", "-s", session];

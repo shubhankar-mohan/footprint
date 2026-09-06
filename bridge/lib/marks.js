@@ -17,11 +17,25 @@ let dirty = false;
 let flushTimer = null;
 
 function load() {
+  let raw;
   try {
-    const parsed = JSON.parse(fs.readFileSync(MARKS, "utf8"));
+    raw = fs.readFileSync(MARKS, "utf8");
+  } catch {
+    return {}; // simply absent — nothing to preserve
+  }
+  try {
+    const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
-    return {}; // absent or corrupt — start empty rather than throw
+    // Present but unreadable. Returning {} is right in memory, but the next
+    // flush would write it over the file and destroy every mark the user made.
+    // A truncated file is what a crash mid-write leaves, so keep it aside.
+    try {
+      const aside = `${MARKS}.corrupt-${Date.now()}`;
+      fs.renameSync(MARKS, aside);
+      console.error(`[marks] ${MARKS} was unreadable; kept a copy at ${aside}`);
+    } catch { /* losing this write beats throwing on every read */ }
+    return {};
   }
 }
 

@@ -73,3 +73,25 @@ test("a corrupt notes file degrades to empty rather than throwing", () => {
   assert.doesNotThrow(() => notes.reload());
   assert.equal(notes.get("s9", "u9"), null);
 });
+
+// A corrupt store used to reset to {} in memory, and the very next write
+// flushed that empty object over the file — silently and permanently
+// destroying every note the user had ever written. Truncation is exactly what
+// a crash mid-write produces, so this is not a hypothetical.
+test("a corrupt notes file is preserved, not overwritten", () => {
+  notes._reset();
+  const original = '{"sess-old":{"u1":"something I spent an hour work';  // truncated
+  fs.writeFileSync(NOTES, original, "utf8");
+  notes.reload();
+  notes.set("sess-new", "u9", "a brand new note");
+  notes.flush();
+
+  // Identify it by content: an earlier test in this file also corrupts the
+  // store, so counting salvage files would be brittle.
+  const dir = path.dirname(NOTES);
+  const salvaged = fs.readdirSync(dir)
+    .filter((f) => f.startsWith("notes.json.corrupt"))
+    .map((f) => fs.readFileSync(path.join(dir, f), "utf8"));
+  assert.ok(salvaged.includes(original),
+    "the unreadable file must be kept aside byte-for-byte, so it can be recovered by hand");
+});

@@ -175,6 +175,12 @@ export function markNeeds(id, on = true) {
 // branch is a guess; the first two are facts.
 export const STALE_NEEDS_MS = 20 * 60 * 1000;
 
+// Claude Code writes the assistant turn carrying the tool_use at about the
+// instant the permission gate fires, so a transcript write a moment after
+// needsSince is the REQUEST being recorded — not the user answering it.
+// Without this window the very next snapshot cleared a live permission hold.
+export const ACTIVITY_GRACE_MS = 30 * 1000;
+
 export function sweepStaleNeeds({ pendingIds = new Set(), activityAt = new Map(), now: t = now() } = {}) {
   const cleared = [];
   for (const s of sessions.values()) {
@@ -186,12 +192,20 @@ export function sweepStaleNeeds({ pendingIds = new Set(), activityAt = new Map()
 
     const since = s.needsSince ?? s.updatedAt ?? t;
 
-    // 2. The session moved on after it started needing us — they answered in
-    //    the terminal. Precise, not a guess.
+    // 2. The session moved on WELL after it started needing us — they answered
+    //    in the terminal. Precise, not a guess.
     const moved = activityAt.get(s.id);
-    if (moved && moved > since) { leaveNeeds(s, "idle"); cleared.push(s.id); continue; }
+    if (moved && moved > since + ACTIVITY_GRACE_MS) {
+      leaveNeeds(s, "idle"); cleared.push(s.id); continue;
+    }
 
-    // 3. Backstop for a session that simply died without a closing hook.
+    // 3. Backstop for a session that died without a closing hook — but NEVER
+    //    for an "ask" fallthrough. There, Claude Code is showing its own prompt
+    //    and the user is genuinely blocked; only branch 2 may clear it. The
+    //    default hook timeout is 55s, so that path is the normal outcome any
+    //    time you step away, and timing it out would recreate the very bug this
+    //    sweep exists to fix.
+    if (s.needsReason === "ask") continue;
     if (t - since > STALE_NEEDS_MS) { leaveNeeds(s, "idle"); cleared.push(s.id); }
   }
   return cleared;
@@ -216,7 +230,11 @@ export function _setNeedsSince(id, ms) {
 export function resolveNeeds(id, decision) {
   const s = sessions.get(id);
   if (!s) return;
-  if (decision === "ask") { enterNeeds(s, "notification"); s.updatedAt = now(); }
+  // "ask" means we did NOT decide — the hook fell through to Claude Code's own
+  // prompt and the user is still blocked, at the terminal. Recorded as its own
+  // reason because the pending row is gone by now, so the sweep has nothing
+  // else left to tell a genuinely-waiting session from an abandoned one.
+  if (decision === "ask") { enterNeeds(s, "ask"); s.updatedAt = now(); }
   else leaveNeeds(s, "working");
 }
 

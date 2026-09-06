@@ -55,19 +55,3 @@ export function buildForkPlan({ sessionId, uuid, cwd, slice, turns }) {
     mutatesOriginal: false,
   };
 }
-
-// tmux session names end up in a command line; allow only characters that
-// cannot change its meaning.
-export function safeName(name) {
-  return String(name || "fp-fork").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) || "fp-fork";
-}
-
-export function forkCommand(plan, name, seedPath) {
-  return {
-    file: "tmux",
-    args: [
-      "new", "-d", "-s", safeName(name), "-c", plan.cwd,
-      `claude "$(cat '${seedPath}')"`,
-    ],
-  };
-}

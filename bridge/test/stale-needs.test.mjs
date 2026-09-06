@@ -69,3 +69,61 @@ test("sweeping is idempotent", () => {
   const second = sessions.sweepStaleNeeds({ pendingIds: new Set(), now: Date.now() });
   assert.deepEqual(second, [], "an already-idle session is not swept twice");
 });
+
+// ── the case the first version got wrong ──────────────────────────────────
+// When a held permission request times out, the hook falls through to Claude
+// Code's OWN prompt: the user is STILL blocked, at the terminal. But the
+// timeout deletes the pending row, so branch 1 stopped protecting it and the
+// 20-minute backstop demoted a genuinely waiting session — the exact bug this
+// sweep exists to prevent, reintroduced in a new form. The default hook
+// timeout is 55s, so this is the NORMAL path whenever you don't answer in the
+// Bar: precisely the away-from-your-desk case.
+test("an 'ask' fallthrough is never swept by the timeout", () => {
+  hook("ask1", "SessionStart");
+  hook("ask1", "PermissionRequest", { tool_name: "Bash" });
+  sessions.resolveNeeds("ask1", "ask");          // timed out → CC prompts instead
+  sessions._setNeedsSince("ask1", Date.now() - 600 * MIN);
+  const changed = sessions.sweepStaleNeeds({ pendingIds: new Set(), now: Date.now() });
+  assert.ok(!changed.includes("ask1"), "the user is still blocked at the terminal");
+  assert.equal(sessions.all().find((s) => s.id === "ask1").state, "needs");
+});
+
+test("an 'ask' fallthrough still clears once the session actually moves on", () => {
+  hook("ask2", "SessionStart");
+  hook("ask2", "PermissionRequest", { tool_name: "Bash" });
+  sessions.resolveNeeds("ask2", "ask");
+  const since = Date.now() - 30 * MIN;
+  sessions._setNeedsSince("ask2", since);
+  const changed = sessions.sweepStaleNeeds({
+    pendingIds: new Set(), now: Date.now(),
+    activityAt: new Map([["ask2", since + 5 * MIN]]),
+  });
+  assert.ok(changed.includes("ask2"), "answering it in the terminal does clear it");
+});
+
+// Claude Code writes the assistant turn carrying the tool_use at about the
+// moment the gate fires, so a write a millisecond after needsSince is the
+// REQUEST being recorded — not the user answering it.
+test("a transcript write in the same instant does not count as an answer", () => {
+  hook("eps1", "SessionStart");
+  hook("eps1", "Notification");
+  const since = Date.now() - 30 * MIN;
+  sessions._setNeedsSince("eps1", since);
+  const changed = sessions.sweepStaleNeeds({
+    pendingIds: new Set(), now: since + 60_000,
+    activityAt: new Map([["eps1", since + 1]]),   // 1ms later
+  });
+  assert.deepEqual(changed, [], "1ms is the request landing, not a reply");
+});
+
+test("a write comfortably after needsSince still counts as an answer", () => {
+  hook("eps2", "SessionStart");
+  hook("eps2", "Notification");
+  const since = Date.now() - 30 * MIN;
+  sessions._setNeedsSince("eps2", since);
+  const changed = sessions.sweepStaleNeeds({
+    pendingIds: new Set(), now: Date.now(),
+    activityAt: new Map([["eps2", since + 60_000]]),
+  });
+  assert.ok(changed.includes("eps2"));
+});

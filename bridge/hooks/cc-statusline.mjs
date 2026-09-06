@@ -24,11 +24,17 @@ function readStdin() {
   });
 }
 
-// The port file records its owner so a crashed bridge cannot strand a dead port.
-// Deliberately duplicated rather than imported: hooks run on every Claude Code
-// event and must stay standalone and dependency-free. Both formats are parsed —
-// a bare integer is what older installs wrote, and an upgrade must not silently
-// stop reporting sessions.
+// Read the port, in either format: the current {"port","pid","startedAt"} and
+// the bare integer older installs wrote. An upgrade must not silently stop
+// reporting sessions.
+//
+// Deliberately duplicated rather than imported from lib/paths.js: hooks run on
+// every Claude Code event and must stay standalone and dependency-free.
+//
+// This does NOT validate the pid, unlike lib/paths.js. That is on purpose — a
+// hook that wrongly decides the bridge is dead drops the event and the session
+// vanishes from the Bar, whereas posting to a dead port just fails harmlessly.
+// Hooks fail open; the app, which only has to avoid opening a dead tab, does not.
 function readPort() {
   let raw;
   try {

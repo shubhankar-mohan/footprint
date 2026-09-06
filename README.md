@@ -104,7 +104,7 @@ color-blind safety.
 
 | Phase | What | Status |
 |---|---|---|
-| **0** | Spike: prove the hook write-back loop + tmux ownership | ✅ built & tested (`bridge/`, 238 tests) |
+| **0** | Spike: prove the hook write-back loop + tmux ownership | ✅ built & tested (`bridge/`, 297 tests) |
 | **1** | Monitor **+** live Approve/Deny: full hook set, session list, aggregate glyph, notifications | 🚧 in progress |
 | **2** | *(folded into Phase 1 — live approve/deny)* | — |
 | **3** | Start a session + reveal terminal + quick input | ✅ shipped |

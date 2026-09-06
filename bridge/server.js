@@ -30,6 +30,7 @@ import * as slicer from "./lib/slicer.js";
 import * as marks from "./lib/marks.js";
 import * as titles from "./lib/titles.js";
 import * as notes from "./lib/notes.js";
+import { isAllowedOrigin, requiresOriginCheck } from "./lib/origin.js";
 import { summarise } from "./lib/stats.js";
 import { buildForkPlan } from "./lib/fork.js";
 import * as sessions from "./lib/sessions.js";
@@ -110,6 +111,23 @@ function sweepNeeds() {
   return cleared;
 }
 
+// Fork seeds are read once, seconds after they are written. Anything still
+// here from a previous run is litter — and it is plaintext conversation, so it
+// should not sit on disk indefinitely.
+const FORK_SEED_TTL_MS = 60 * 60 * 1000;
+function sweepOldForkSeeds() {
+  try {
+    const cutoff = Date.now() - FORK_SEED_TTL_MS;
+    for (const f of fs.readdirSync(CCBAR_DIR)) {
+      if (!f.startsWith("fork-") || !f.endsWith(".md")) continue;
+      const fp = path.join(CCBAR_DIR, f);
+      try {
+        if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+      } catch { /* raced with something else, fine */ }
+    }
+  } catch { /* directory unreadable — not worth failing a fork over */ }
+}
+
 function snapshot() {
   sweepNeeds();
   return {
@@ -173,6 +191,18 @@ function isPermissionGate(payload) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${HOST}`);
   const { pathname } = url;
+
+  // Nothing on the web may drive this bridge. It listens on loopback with no
+  // authentication, and a text/plain POST is a CORS simple request — no
+  // preflight — so without this any page the user visited could approve a held
+  // permission, start a fork or drive a reveal, blind. Hooks, the CLI and the
+  // native app send no Origin at all, which is allowed; a foreign one is not.
+  if (requiresOriginCheck(req.method) && !isAllowedOrigin(req.headers.origin)) {
+    return sendJSON(res, 403, {
+      ok: false,
+      error: "Refused: this request did not come from Footprint.",
+    });
+  }
 
   // --- Health ------------------------------------------------------------
   if (req.method === "GET" && pathname === "/health") {
@@ -327,8 +357,18 @@ const server = http.createServer(async (req, res) => {
       }
 
       // The seed goes to a file, not down a pipe of keystrokes.
+      //
+      // These accumulate: each is up to 90KB of verbatim conversation, and
+      // nothing was ever deleting them. Sweep old ones on the way in — the file
+      // is only needed for the instant it takes tmux to start claude. A
+      // millisecond timestamp also collided for two forks in the same tick, so
+      // the name carries randomness too.
       ensureDir();
-      const seedPath = path.join(CCBAR_DIR, `fork-${Date.now().toString(36)}.md`);
+      sweepOldForkSeeds();
+      const seedPath = path.join(
+        CCBAR_DIR,
+        `fork-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.md`
+      );
       fs.writeFileSync(seedPath, plan.seed, "utf8");
 
       const info = await tmux.launch({ cwd: plan.cwd, flags: { promptFile: seedPath }, terminal });
@@ -623,7 +663,22 @@ function shutdown() {
   atlasEngine.shutdown();
   // Give up our claim on the port so the next reader is not sent to a ghost.
   releasePort();
+
+  // SSE connections never end on their own, and server.close() waits for every
+  // open connection — so with the app attached, shutdown hung forever. The
+  // result was a zombie: listener closed, port released, process alive, and the
+  // menu-bar app pinned to a bridge that accepts nothing. Observed in the wild.
+  for (const res of sseClients) {
+    try { res.end(); } catch { /* already gone */ }
+  }
+  sseClients.clear();
+
   server.close(() => process.exit(0));
+
+  // Belt and braces: if anything else is still holding a socket, do not hang
+  // around. A bridge that will not die is worse than one that exits abruptly.
+  const bail = setTimeout(() => process.exit(0), 3000);
+  if (typeof bail.unref === "function") bail.unref();
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);

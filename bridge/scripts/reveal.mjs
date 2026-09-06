@@ -34,6 +34,47 @@ export async function ttyForPid(pid) {
 }
 
 // Map a ps `comm` (executable path) to a known terminal app name.
+// The only application names this module will ever put into AppleScript.
+//
+// activateApp used to interpolate a caller-supplied string directly:
+//   tell application "${appName}" to activate
+// and `app` arrived from the POST /reveal body unvalidated. Closing the quote
+// and appending `do shell script` gave arbitrary command execution — and it was
+// reachable from any web page, because the bridge has no Origin check and a
+// text/plain POST is a CORS "simple request" needing no preflight.
+//
+// An allowlist, not sanitising: escaping rules can be got around, membership
+// cannot. These are exactly the terminals matchTerminalComm can identify, so
+// nothing the product legitimately does is lost.
+export const KNOWN_TERMINALS = Object.freeze([
+  "Warp", "iTerm", "Terminal", "WezTerm", "Alacritty",
+  "kitty", "Hyper", "Ghostty", "Tabby",
+]);
+
+// Returns the name only if it is exactly one we know. Never returns a repaired
+// or escaped string — a caller must not be able to smuggle anything through.
+export function safeAppName(name) {
+  if (typeof name !== "string") return null;
+  return KNOWN_TERMINALS.includes(name) ? name : null;
+}
+
+// `session` and `tty` reach AppleScript the same way `app` did:
+//     do script "tmux attach -t ${session}"
+//     if tty of t is "${dev}"
+// Both arrive from the POST /reveal body. Refused, never repaired — a repaired
+// string is a bypass waiting to be found, and a caller with a real session or
+// tty has nothing to repair.
+export function safeTmuxName(name) {
+  if (typeof name !== "string" || !name) return null;
+  return /^[A-Za-z0-9_-]{1,64}$/.test(name) ? name : null;
+}
+
+export function safeTty(tty) {
+  if (typeof tty !== "string" || !tty) return null;
+  const dev = tty.startsWith("/dev/") ? tty : `/dev/${tty}`;
+  return /^\/dev\/tty[A-Za-z0-9._-]{1,32}$/.test(dev) ? dev : null;
+}
+
 export function matchTerminalComm(comm) {
   const c = comm || "";
   if (/Warp\.app/i.test(c)) return "Warp";
@@ -133,7 +174,9 @@ export async function revealOwned({ session, app = "Terminal", cwd }) {
 
   // Nothing attached → open a fresh window attached to the session.
   if (app === "Warp") return revealOwnedWarp({ session, cwd });
-  const attach = `tmux attach -t ${session}`;
+  const safe = safeTmuxName(session);
+  if (!safe) return { revealed: false, method: "owned", reliable: false, note: "Unrecognised session name." };
+  const attach = `tmux attach -t ${safe}`;
   if (app === "iTerm" || app === "iTerm2") {
     await osa(
       `tell application "iTerm"
@@ -155,7 +198,8 @@ export async function revealOwned({ session, app = "Terminal", cwd }) {
 // iTerm: focus the existing tab whose tty matches the given tty.
 export async function revealITermByTty(tty) {
   // tty like "ttys004" -> iTerm reports "/dev/ttys004"
-  const dev = tty.startsWith("/dev/") ? tty : `/dev/${tty}`;
+  const dev = safeTty(tty);
+  if (!dev) return { revealed: false, method: "terminal-tty", reliable: false, note: "Unrecognised tty." };
   const script = `
     tell application "iTerm"
       activate
@@ -180,7 +224,8 @@ export async function revealITermByTty(tty) {
 // Terminal.app: focus the existing tab whose tty matches. Terminal exposes both
 // `tty` and `selected` on tabs, so (unlike Warp) we can target the exact tab.
 export async function revealTerminalByTty(tty) {
-  const dev = tty.startsWith("/dev/") ? tty : `/dev/${tty}`;
+  const dev = safeTty(tty);
+  if (!dev) return { revealed: false, method: "terminal-tty", reliable: false, note: "Unrecognised tty." };
   const script = `
     tell application "Terminal"
       activate
@@ -201,12 +246,23 @@ export async function revealTerminalByTty(tty) {
 
 // Warp / anything else: best-effort — just bring the app forward.
 export async function activateApp(appName) {
-  await osa(`tell application "${appName}" to activate`);
+  const app = safeAppName(appName);
+  if (!app) {
+    // Refuse rather than guess. Doing nothing is always safe; running an
+    // unknown string as AppleScript is not.
+    return {
+      revealed: false,
+      method: "app-activate",
+      reliable: false,
+      note: `Not a terminal Footprint knows how to bring forward.`,
+    };
+  }
+  await osa(`tell application "${app}" to activate`);
   return {
     revealed: true,
     method: "app-activate",
     reliable: false,
-    note: `Brought ${appName} forward; focusing the exact tab is not supported here.`,
+    note: `Brought ${app} forward; focusing the exact tab is not supported here.`,
   };
 }
 
