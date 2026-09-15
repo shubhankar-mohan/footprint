@@ -128,6 +128,19 @@ function sweepOldForkSeeds() {
   } catch { /* directory unreadable — not worth failing a fork over */ }
 }
 
+// Whether tmux is on PATH. Cached for a minute: hasTmux() spawns a process and
+// /health is polled, but a user who just ran `brew install tmux` should not have
+// to restart Footprint to see it appear.
+let tmuxSeen = null;
+let tmuxSeenAt = 0;
+const TMUX_TTL_MS = 60_000;
+async function tmuxAvailable() {
+  if (tmuxSeen !== null && Date.now() - tmuxSeenAt < TMUX_TTL_MS) return tmuxSeen;
+  tmuxSeen = await tmux.hasTmux();
+  tmuxSeenAt = Date.now();
+  return tmuxSeen;
+}
+
 function snapshot() {
   sweepNeeds();
   return {
@@ -206,7 +219,11 @@ const server = http.createServer(async (req, res) => {
 
   // --- Health ------------------------------------------------------------
   if (req.method === "GET" && pathname === "/health") {
-    return sendJSON(res, 200, { ok: true, ts: Date.now() });
+    // `tmux` is reported here so the app can stop OFFERING what cannot work.
+    // Starting a session, jumping to a terminal and forking all need it, and
+    // without this the UI only found out at the moment the user clicked.
+    // Cached: hasTmux() shells out, and /health is polled.
+    return sendJSON(res, 200, { ok: true, ts: Date.now(), tmux: await tmuxAvailable() });
   }
 
   // --- The Atlas ---------------------------------------------------------

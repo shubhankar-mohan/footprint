@@ -37,6 +37,21 @@ public struct BridgeClient {
     }
   }
 
+  /// Whether the bridge can use tmux. Starting a session, jumping to a terminal
+  /// and forking all need it; without this the UI offered them anyway and failed
+  /// at the moment the user clicked.
+  public func tmuxAvailable() async -> Bool {
+    guard let base = BridgePaths.baseURL() else { return false }
+    var req = URLRequest(url: base.appendingPathComponent("health"))
+    req.timeoutInterval = 2
+    guard let (data, _) = try? await URLSession.shared.data(for: req),
+          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return false }
+    // Absent on an older bridge — assume yes rather than hiding a feature that
+    // probably works.
+    return obj["tmux"] as? Bool ?? true
+  }
+
   public func decide(id: String, decision: String, updatedInput: [String: JSONValue]? = nil) async {
     guard let base = BridgePaths.baseURL() else { return }
     var req = URLRequest(url: base.appendingPathComponent("decision"))

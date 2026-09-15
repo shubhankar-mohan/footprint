@@ -34,7 +34,7 @@ struct SessionRowView: View {
                 // Owned = we launched it and can reply. Small terminal glyph; the
                 // full tier name lives in the tooltip, not a jargon capsule.
                 Image(systemName: "terminal")
-                  .font(.system(size: 10)).foregroundStyle(.tertiary)
+                  .font(.system(size: 11)).foregroundStyle(.tertiary)
                   .help("Owned session — you can reply to it from here")
               }
             }

@@ -1,6 +1,6 @@
 cask "footprint" do
-  version "0.2.0"
-  sha256 "2db8174cdb74739a5ae1fd5f1221394099bac8d665dad0a6a834658dd1c31b0a"
+  version "0.2.1"
+  sha256 "6257147b4c46744808a7701bcd83f9b1c8f9da5ec74a4fd36633a521abca2720"
 
   url "https://github.com/shubhankar-mohan/footprint/releases/download/v#{version}/Footprint-#{version}.zip"
   name "Footprint"
@@ -9,6 +9,12 @@ cask "footprint" do
 
   # The app spawns a small Node bridge at runtime.
   depends_on formula: "node"
+  # tmux is what makes a session OWNED: Footprint starts it inside tmux so it has
+  # a channel to send input back on. Without it "Start a session", jumping to a
+  # terminal, and forking all fail — and they fail at the moment you click, which
+  # is the worst time to discover a missing dependency. Homebrew can just install
+  # it, so it does.
+  depends_on formula: "tmux"
   depends_on macos: :sonoma # macOS 14+, for the Observation framework
 
   app "Footprint.app"

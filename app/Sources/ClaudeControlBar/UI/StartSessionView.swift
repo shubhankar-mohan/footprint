@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CCBarCore
 
 // Terminal-first "Start a session": pick dir + terminal + permission mode, launch
 // an Owned (tmux) session, and bring the terminal forward attached to it.
@@ -10,9 +11,15 @@ struct StartSessionView: View {
   // time. Persisted in UserDefaults; the values below are only first-run defaults.
   @AppStorage("cc.start.cwd") private var cwd = ""
   @AppStorage("cc.start.mode") private var mode = "ask"
-  // All three run `tmux attach`: Warp via a launch config, Terminal/iTerm via
-  // AppleScript. Warp is the default since that's the common setup here.
-  @AppStorage("cc.start.terminal") private var terminal = "Warp"
+  // Terminals run `tmux attach`: Warp via a launch config, Terminal/iTerm via
+  // AppleScript, the rest by bringing the app forward. The stored value is a
+  // preference, not a promise — it is resolved against what is actually
+  // installed every time this sheet opens, because it used to default to Warp
+  // on machines that did not have Warp and failed at the moment you clicked
+  // Start.
+  @AppStorage("cc.start.terminal") private var terminal = ""
+
+  private var choices: [TerminalChoice] { TerminalChoice.installed() }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -34,11 +41,10 @@ struct StartSessionView: View {
       }
 
       Picker("Terminal", selection: $terminal) {
-        Text("Warp").tag("Warp")
-        Text("Terminal").tag("Terminal")
-        Text("iTerm").tag("iTerm")
+        ForEach(choices, id: \.id) { c in Text(c.name).tag(c.id) }
       }
       .font(.system(size: 11))
+      .onAppear { terminal = TerminalChoice.resolve(terminal.isEmpty ? nil : terminal).id }
 
       Picker("Permission", selection: $mode) {
         Text("Ask (default)").tag("ask")
@@ -48,10 +54,29 @@ struct StartSessionView: View {
       }
       .font(.system(size: 11))
 
-      Text(preview).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
+      Text(preview).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
       if mode == "bypass" {
         Text("⚠︎ Skips every permission prompt — use only in trusted repos.")
-          .font(.system(size: 10)).foregroundStyle(Theme.color(.needs))
+          .font(.system(size: 11)).foregroundStyle(Theme.color(.needs))
+      }
+
+      // tmux is what makes a session Owned — it is the channel Footprint replies
+      // on. Saying so here beats letting Start fail silently at the click.
+      if !model.tmuxAvailable {
+        VStack(alignment: .leading, spacing: 3) {
+          Text("tmux isn't installed.")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.color(.needs))
+          Text("Footprint starts sessions inside tmux so it can reply to them. Install it, then reopen this.")
+            .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          Text("brew install tmux")
+            .font(.system(size: 11, design: .monospaced))
+            .textSelection(.enabled)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(Theme.rowHover, in: RoundedRectangle(cornerRadius: 4))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("tmux is not installed. Footprint starts sessions inside tmux so it can reply to them. Install it with brew install tmux, then reopen this.")
       }
 
       HStack {
@@ -60,7 +85,9 @@ struct StartSessionView: View {
           model.startSession(cwd: cwd, terminal: terminal, mode: mode)
           show = false
         }
-        .buttonStyle(.borderedProminent).disabled(cwd.isEmpty)
+        .buttonStyle(.borderedProminent)
+        .disabled(cwd.isEmpty || !model.tmuxAvailable)
+        .accessibilityHint(model.tmuxAvailable ? "" : "Unavailable until tmux is installed")
       }
     }
     .padding(12).frame(width: 320).background(Theme.popoverBG)

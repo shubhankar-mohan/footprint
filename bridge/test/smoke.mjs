@@ -202,6 +202,11 @@ async function main() {
       "bypassPermissions PreToolUse creates no pending"
     );
 
+    // 9b. /health reports whether tmux is usable, so the UI can stop offering
+    //     Start-a-session and fork when they cannot possibly work.
+    const health = await api("/health");
+    ok(typeof health.tmux === "boolean", "/health reports tmux availability as a boolean");
+
     // 10. usage ingest (statusline rate_limits) surfaces in /state
     const soon = Math.floor(Date.now() / 1000) + 3600; // 1h out = fresh
     await api("/usage", "POST", {

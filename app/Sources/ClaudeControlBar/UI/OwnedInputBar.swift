@@ -16,7 +16,7 @@ struct OwnedInputBar: View {
       HStack(spacing: 6) {
         ForEach(["continue", "yes", "stop"], id: \.self) { chip in
           Button(chip) { onSend(name, chip) }
-            .buttonStyle(.bordered).controlSize(.small).font(.system(size: 10))
+            .buttonStyle(.bordered).controlSize(.small).font(.system(size: 11))
         }
         TextField("Reply…", text: $text)
           .textFieldStyle(.roundedBorder).font(.system(size: 11))

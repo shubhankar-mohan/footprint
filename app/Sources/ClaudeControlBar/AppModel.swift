@@ -22,6 +22,9 @@ enum HookOutcome: Equatable {
 final class AppModel: ObservableObject {
   @Published var snapshot: Snapshot = .empty
   @Published var connected = false
+  /// tmux drives Start-a-session, jump-to-terminal and fork. Published so the
+  /// UI can explain its absence instead of failing at the click.
+  @Published var tmuxAvailable = true
   @Published var hooksInstalled = false
   @Published var lastHookOutcome: HookOutcome?
   @Published var lastMCPOutcome: MCPInstaller.Outcome?
@@ -31,6 +34,7 @@ final class AppModel: ObservableObject {
   private let client = BridgeClient()
   private let differ = SessionStore()
   private var streamTask: Task<Void, Never>?
+  private var checkedTmux = false
   // Held strongly: UNUserNotificationCenter.delegate is a weak reference.
   private var notificationRouter: NotificationRouter?
 
@@ -56,6 +60,14 @@ final class AppModel: ObservableObject {
         let newly = self.differ.apply(raw)
         self.snapshot = self.differ.snapshot
         self.connected = true
+        if !self.checkedTmux {
+          self.checkedTmux = true
+          Task { [weak self] in
+            guard let self else { return }
+            let ok = await self.client.tmuxAvailable()
+            await MainActor.run { self.tmuxAvailable = ok }
+          }
+        }
         for id in newly {
           let session = self.snapshot.sessions.first { $0.id == id }
           // Allow / Deny only make sense when a request is actually being held

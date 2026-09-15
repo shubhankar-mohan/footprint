@@ -68,5 +68,47 @@ check(
 check(BridgePaths.isProcessAlive(alive), "isProcessAlive sees this process")
 check(!BridgePaths.isProcessAlive(0), "isProcessAlive rejects pid 0")
 
+
+// ── installed terminals ───────────────────────────────────────────────────
+// The Start sheet used to offer Warp, Terminal and iTerm unconditionally, and
+// defaulted to Warp because that happened to be the author's setup. On a Mac
+// without Warp the default was a terminal that does not exist, and "Start a
+// session" failed at the click.
+print("\nTerminal detection")
+
+let all = TerminalChoice.allKnown
+check(all.contains { $0.id == "Terminal" }, "Apple Terminal is a known choice")
+check(all.contains { $0.id == "Warp" }, "Warp is a known choice")
+check(all.contains { $0.id == "iTerm" }, "iTerm is a known choice")
+
+let installed = TerminalChoice.installed()
+check(!installed.isEmpty, "at least one terminal is always found")
+check(
+  installed.contains { $0.id == "Terminal" },
+  "Apple Terminal ships with macOS, so it is always available as a fallback"
+)
+check(
+  installed.allSatisfy { c in all.contains { $0.id == c.id } },
+  "installed is a subset of known"
+)
+
+// The default must be something the machine actually has.
+let fallback = TerminalChoice.defaultChoice()
+check(
+  installed.contains { $0.id == fallback.id },
+  "the default terminal is one that is actually installed"
+)
+
+// A remembered choice that is no longer installed must not be honoured —
+// uninstalling Warp should not leave Start permanently broken.
+check(
+  TerminalChoice.resolve("Warp-That-Does-Not-Exist").id == fallback.id,
+  "an unknown or uninstalled remembered choice falls back"
+)
+check(
+  TerminalChoice.resolve("Terminal").id == "Terminal",
+  "an installed remembered choice is kept"
+)
+
 print(failures == 0 ? "\nALL CHECKS PASSED ✓" : "\n\(failures) FAILURES ✗")
 exit(failures == 0 ? 0 : 1)
