@@ -46,8 +46,40 @@ export function tmuxBin(env = process.env) {
   return "tmux"; // last resort: let PATH try, in case it is somewhere unusual
 }
 
-export function claudeCommand(flags = {}) {
-  const parts = ["claude"];
+// And the same for claude itself. tmux starts the session and runs `claude`
+// inside it, so a bare name fails for exactly the same reason tmux did: the
+// shell tmux spawns inherits the app's PATH. The session was being created and
+// torn down in the same instant, which from outside looked like a launch that
+// succeeded and produced nothing.
+export const CLAUDE_CANDIDATES = [
+  `${process.env.HOME || ""}/.local/bin/claude`,    // official installer
+  `${process.env.HOME || ""}/.claude/local/claude`, // local install
+  "/opt/homebrew/bin/claude",                        // Homebrew, Apple Silicon
+  "/usr/local/bin/claude",                           // Homebrew, Intel
+];
+
+export function claudeBin(env = process.env) {
+  if (env.CCBAR_CLAUDE) return env.CCBAR_CLAUDE;
+  const home = env.HOME || process.env.HOME || "";
+  const candidates = [
+    `${home}/.local/bin/claude`,
+    `${home}/.claude/local/claude`,
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch { /* keep looking */ }
+  }
+  return "claude"; // last resort: let PATH try
+}
+
+// Quote only when needed, so the common case stays readable in logs.
+const q1 = (p) => (/[^A-Za-z0-9_\/.-]/.test(p) ? JSON.stringify(p) : p);
+
+export function claudeCommand(flags = {}, env = process.env) {
+  const parts = [q1(claudeBin(env))];
   // Continue an existing conversation rather than starting a new one. The id
   // comes from a transcript filename, so it is a uuid — quote it anyway.
   if (flags.resume) parts.push("--resume", JSON.stringify(String(flags.resume)));

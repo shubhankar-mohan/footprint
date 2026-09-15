@@ -34,3 +34,37 @@ test("it never returns empty — callers pass this straight to execFile", () => 
   const got = tmuxBin({ PATH: "" });
   assert.ok(typeof got === "string" && got.length > 0);
 });
+
+// One layer down, the same bug: tmux starts the session and runs `claude`
+// inside it. With launchd's PATH the shell cannot find claude either, so tmux
+// created the session, claude failed to launch, and tmux tore it down — which
+// looked from the outside like "launch succeeded, no session exists".
+import { claudeBin, CLAUDE_CANDIDATES, claudeCommand } from "../scripts/tmux.mjs";
+
+test("claude is looked for where installers actually put it", () => {
+  assert.ok(CLAUDE_CANDIDATES.some((p) => p.includes(".local/bin/claude")), "official installer");
+  assert.ok(CLAUDE_CANDIDATES.some((p) => p.includes(".claude/local/claude")), "local install");
+  assert.ok(CLAUDE_CANDIDATES.includes("/opt/homebrew/bin/claude"), "Homebrew, Apple Silicon");
+  assert.ok(CLAUDE_CANDIDATES.includes("/usr/local/bin/claude"), "Homebrew, Intel");
+});
+
+test("claudeBin resolves without PATH", () => {
+  const got = claudeBin({ PATH: "/usr/bin:/bin" });
+  assert.ok(typeof got === "string" && got.length > 0);
+});
+
+test("an explicit override wins", () => {
+  assert.equal(claudeBin({ CCBAR_CLAUDE: "/custom/claude" }), "/custom/claude");
+});
+
+// The command tmux runs must carry the resolved path, or the session dies the
+// instant it starts.
+test("the launched command uses the resolved claude, not a bare name", () => {
+  const cmd = claudeCommand({}, { CCBAR_CLAUDE: "/custom/claude" });
+  assert.ok(cmd.startsWith("/custom/claude"), cmd);
+});
+
+test("a path containing a space is quoted", () => {
+  const cmd = claudeCommand({}, { CCBAR_CLAUDE: "/Applications/My Tools/claude" });
+  assert.ok(cmd.includes('"/Applications/My Tools/claude"'), cmd);
+});
