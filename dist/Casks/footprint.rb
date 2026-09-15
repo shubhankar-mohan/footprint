@@ -26,6 +26,14 @@ cask "footprint" do
   # developer" wall for a download brew just validated. This is a deliberate
   # tradeoff and the caveats below state it plainly. It is also why we ship from
   # our OWN tap: homebrew/cask requires notarization.
+  # NOTE: Homebrew warns that `postflight` is deprecated in favour of
+  # `postflight_steps`. Not converted yet, deliberately: postflight_steps is a
+  # restricted declarative DSL where `appdir` is a *base* for the command path
+  # only — `args` are passed through as plain strings, so there is no supported
+  # way to build "#{appdir}/Footprint.app" for xattr and open. A naive rename
+  # makes the cask unreadable ("undefined local variable appdir"), which breaks
+  # install for everyone to silence a warning. Revisit when the DSL grows a way
+  # to anchor an argument.
   postflight do
     system_command "/usr/bin/xattr",
                    args: ["-dr", "com.apple.quarantine", "#{appdir}/Footprint.app"]
