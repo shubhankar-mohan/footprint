@@ -17,13 +17,14 @@ it requires notarization — but a personal tap has no such rule.)
 
 ```bash
 # 1. Build + package (prints the version + sha256)
-bash dist/build-release.sh 0.1.0
+bash dist/build-release.sh
 
 # 2. Create a GitHub release on the app repo and upload the zip:
-gh release create v0.1.0 dist/ClaudeControlBar-0.1.0.zip --title "v0.1.0" --notes "..."
+gh release create "v$(cat VERSION)" "dist/Footprint-$(cat VERSION).zip" \
+  --title "Footprint v$(cat VERSION)" --notes-file notes.md
 
 # 3. Copy Casks/footprint.rb into the tap (build-release.sh already wrote the sha256):
-#    - version "0.1.0"
+#    - version "$(cat VERSION)"
 #    - sha256 "<the sha256 build-release.sh printed>"
 #    - confirm the url matches your GitHub user/repo
 #    Commit + push the tap.

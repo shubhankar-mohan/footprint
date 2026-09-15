@@ -246,7 +246,7 @@ schematics that follow are the shareable record of the layouts.
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| **0 — Ship the Bar** | Repo · tag · tap · real sha256 · rename to Footprint · working uninstall | ✅ done — v0.1.0 released |
+| **0 — Ship the Bar** | Repo · tag · tap · real sha256 · rename to Footprint · working uninstall | ✅ done — v0.2.3 released |
 | **1 — References** | `/mark` + MCP `get_slice` on the existing bridge | ✅ done — `get_slice`, `mark`, `list_marks` |
 | **2 — Spike + Engine** | JSONL→tree spike (4 schema Qs), worker-thread parser, bounded reads, index | ✅ done |
 | **3 — Atlas** | Browser + search + graph + inspector/modal; Bar gains "Open in Atlas" | ✅ done — plus a 38-finding a11y pass |

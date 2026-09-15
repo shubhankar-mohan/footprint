@@ -8,7 +8,7 @@
 <p align="center">
   <img alt="platform: macOS" src="https://img.shields.io/badge/platform-macOS-black">
   <img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="status: pre-release" src="https://img.shields.io/badge/status-v0.1.0%20·%20pre--release-e8a935">
+  <img alt="version: v0.2.3" src="https://img.shields.io/badge/version-v0.2.3-4a90e2">
   <img alt="price: free & open-source" src="https://img.shields.io/badge/free%20%26%20open--source-yes-4a90e2">
 </p>
 
@@ -28,6 +28,18 @@ deliberately narrow — and it does it from the menu bar, without stealing focus
   transcript into a popover.
 - **Auto-resume** a session that paused on a usage limit.
 - **Start new sessions** in your terminal of choice.
+
+And once a session is over, **the Atlas** — a local page holding every session you
+have ever run:
+
+- **Search across all of them**, and see a graph of what you *asked*, not the tool
+  chatter underneath it.
+- **Quote your own history back** — an MCP server lets a live session pull in an
+  earlier turn by name, scoped to the project you are actually in so an unrelated
+  codebase cannot end up in your conversation by accident.
+- **Fork from any past ask** into a new session, leaving the original untouched.
+- **Annotate** a turn with why it mattered — the one thing a transcript can never
+  reconstruct for you later.
 
 It's **free and open-source**, native Swift/SwiftUI, with a tiny local bridge that speaks
 Claude Code's hook protocol.
@@ -104,14 +116,17 @@ color-blind safety.
 
 | Phase | What | Status |
 |---|---|---|
-| **0** | Spike: prove the hook write-back loop + tmux ownership | ✅ built & tested (`bridge/`, 297 tests) |
-| **1** | Monitor **+** live Approve/Deny: full hook set, session list, aggregate glyph, notifications | 🚧 in progress |
-| **2** | *(folded into Phase 1 — live approve/deny)* | — |
+| **0** | Spike: prove the hook write-back loop + tmux ownership | ✅ shipped |
+| **1** | Monitor + live Approve/Deny: full hook set, session list, aggregate glyph, notifications | ✅ shipped |
 | **3** | Start a session + reveal terminal + quick input | ✅ shipped |
 | **4** | Auto-resume + usage hourglass | ✅ shipped |
-| **5** | Onboarding, launch-at-login, **distribution** | 🚧 in progress — the current focus |
-| **6** | `/mark` + MCP `get_slice`: quote any past turn back into a live session | ⏳ next |
-| **7** | The Atlas: browse, search, and graph every session | ⏳ |
+| **5** | Onboarding, launch-at-login, distribution | ✅ shipped |
+| **6** | `mark` + MCP `get_slice`: quote any past turn back into a live session | ✅ shipped |
+| **7** | The Atlas: browse, search, and graph every session | ✅ shipped |
+| **8** | Forks, notes, the forest view, project scoping | ✅ shipped |
+| **9** | Sparkle auto-update, a notarised `.dmg` | ⏳ open |
+
+Built and tested: **308 bridge tests** plus an in-app Swift check suite.
 
 The current Phase 1 design lives in
 [`docs/superpowers/specs/2026-07-11-phase1-monitor-approve-design.md`](docs/superpowers/specs/2026-07-11-phase1-monitor-approve-design.md).
@@ -149,6 +164,9 @@ Free, and no Apple Developer account required:
 ```bash
 brew install shubhankar-mohan/tap/footprint
 ```
+
+Node and `tmux` are installed for you — `tmux` is what lets Footprint start
+sessions, jump you to a terminal, and fork.
 
 Footprint has **no Dock icon** — it lives in the menu bar. The install launches it once so
 you can find it. Open it and choose **Turn on monitoring**; it shows you exactly what
