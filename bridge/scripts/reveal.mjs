@@ -11,6 +11,7 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { tmuxBin } from "./tmux.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -147,7 +148,7 @@ export async function revealOwnedWarp({ session, cwd }) {
 // "/dev/ttys011"), or null if nobody's attached.
 export async function firstClientTty(session) {
   try {
-    const { stdout } = await pexec("tmux", ["list-clients", "-t", session, "-F", "#{client_tty}"]);
+    const { stdout } = await pexec(tmuxBin(), ["list-clients", "-t", session, "-F", "#{client_tty}"]);
     return stdout.split("\n").map((s) => s.trim()).filter(Boolean)[0] || null;
   } catch {
     return null;

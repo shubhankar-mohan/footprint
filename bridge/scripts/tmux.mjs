@@ -10,6 +10,7 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 
 const pexec = promisify(execFile);
@@ -21,6 +22,30 @@ function shortId() {
 // Build the claude command with an optional permission flag.
 // flags.skip -> --dangerously-skip-permissions  (VERIFIED correct flag name)
 // flags.mode -> --permission-mode <acceptEdits|plan|default>
+// Where tmux actually is.
+//
+// A GUI app inherits launchd's PATH, not a shell's. Inside the installed app
+// that PATH is roughly /usr/bin:/bin:/usr/sbin:/sbin with Homebrew's shim dir —
+// and NOT /opt/homebrew/bin. So a bare `tmux` lookup failed even with tmux
+// installed, which is why Start-a-session never worked from /Applications. The
+// app already resolves node this way; tmux needs the same treatment.
+export const TMUX_CANDIDATES = [
+  "/opt/homebrew/bin/tmux", // Homebrew, Apple Silicon
+  "/usr/local/bin/tmux",    // Homebrew, Intel
+  "/opt/local/bin/tmux",    // MacPorts
+  "/usr/bin/tmux",          // system
+];
+
+export function tmuxBin(env = process.env) {
+  if (env.CCBAR_TMUX) return env.CCBAR_TMUX;
+  for (const p of TMUX_CANDIDATES) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch { /* unreadable — keep looking */ }
+  }
+  return "tmux"; // last resort: let PATH try, in case it is somewhere unusual
+}
+
 export function claudeCommand(flags = {}) {
   const parts = ["claude"];
   // Continue an existing conversation rather than starting a new one. The id
@@ -43,7 +68,7 @@ export function claudeCommand(flags = {}) {
 
 export async function hasTmux() {
   try {
-    await pexec("tmux", ["-V"]);
+    await pexec(tmuxBin(), ["-V"]);
     return true;
   } catch {
     return false;
@@ -74,7 +99,7 @@ export async function launch({ cwd, name, flags, terminal }) {
   args.push("-e", `CCBAR_OWNED_TMUX=${session}`);
   if (terminal) args.push("-e", `CCBAR_TERMINAL=${terminal}`);
   args.push(cmd);
-  await pexec("tmux", args);
+  await pexec(tmuxBin(), args);
   return {
     name: session,
     tier: "owned",
@@ -87,7 +112,7 @@ export async function launch({ cwd, name, flags, terminal }) {
 export async function sendKeys(session, text) {
   if (!session) throw new Error("session name required");
   // Send the literal text, then a separate Enter keystroke.
-  await pexec("tmux", ["send-keys", "-t", session, text ?? "", "Enter"]);
+  await pexec(tmuxBin(), ["send-keys", "-t", session, text ?? "", "Enter"]);
   return true;
 }
 
@@ -99,7 +124,7 @@ export async function sendContinue(session) {
 // Capture the visible pane text of a session (for limit detection).
 export async function capturePane(session) {
   try {
-    const { stdout } = await pexec("tmux", ["capture-pane", "-p", "-t", session]);
+    const { stdout } = await pexec(tmuxBin(), ["capture-pane", "-p", "-t", session]);
     return stdout;
   } catch {
     return "";
@@ -114,12 +139,12 @@ export async function listOwned() {
   const out = [];
   for (const name of await listSessions()) {
     try {
-      const { stdout: env } = await pexec("tmux", ["show-environment", "-t", name]);
+      const { stdout: env } = await pexec(tmuxBin(), ["show-environment", "-t", name]);
       if (!/^CCBAR_OWNED_TMUX=/m.test(env)) continue;
       const terminal = (env.match(/^CCBAR_TERMINAL=(.*)$/m) || [])[1] || null;
       let cwd = null;
       try {
-        const { stdout } = await pexec("tmux", [
+        const { stdout } = await pexec(tmuxBin(), [
           "display-message", "-p", "-t", name, "#{pane_current_path}",
         ]);
         cwd = stdout.trim() || null;
@@ -136,7 +161,7 @@ export async function listOwned() {
 
 export async function listSessions() {
   try {
-    const { stdout } = await pexec("tmux", ["list-sessions", "-F", "#{session_name}"]);
+    const { stdout } = await pexec(tmuxBin(), ["list-sessions", "-F", "#{session_name}"]);
     return stdout.split("\n").map((s) => s.trim()).filter(Boolean);
   } catch {
     return [];

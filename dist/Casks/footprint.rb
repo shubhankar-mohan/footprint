@@ -1,6 +1,6 @@
 cask "footprint" do
-  version "0.2.1"
-  sha256 "6257147b4c46744808a7701bcd83f9b1c8f9da5ec74a4fd36633a521abca2720"
+  version "0.2.2"
+  sha256 "b469581690fef6c771ab63881698cacaae344f8ae6992a57c55e2e942d85c65f"
 
   url "https://github.com/shubhankar-mohan/footprint/releases/download/v#{version}/Footprint-#{version}.zip"
   name "Footprint"
