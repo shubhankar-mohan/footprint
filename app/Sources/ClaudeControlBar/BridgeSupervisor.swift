@@ -42,11 +42,14 @@ final class BridgeSupervisor {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: node)
     p.arguments = node.hasSuffix("env") ? ["node", js.path] : [js.path]
-    if let reserved {
-      var env = ProcessInfo.processInfo.environment
-      env["CCBAR_PORT"] = String(reserved)
-      p.environment = env
-    }
+    var env = ProcessInfo.processInfo.environment
+    if let reserved { env["CCBAR_PORT"] = String(reserved) }
+    // So the bridge can shut itself down if this app goes away without getting
+    // the chance to terminate it. An orphaned bridge keeps its port, keeps
+    // polling the rate-limited usage endpoint, and keeps serving a snapshot
+    // nothing updates — and a later launch can end up streaming from it.
+    env["CCBAR_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+    p.environment = env
     p.terminationHandler = { [weak self] _ in
       guard let self else { return }
       self.setLivePort(nil)

@@ -51,6 +51,15 @@ public enum BridgePaths {
     return errno == EPERM
   }
 
+  /// Which bridge to talk to, given the port this app spawned and the one on
+  /// disk. The spawned port is known first-hand; the port file is a mutable
+  /// global that any other bridge — including an orphan from a previous launch
+  /// — may have written last, or may simply have got there first while ours was
+  /// still booting. Believe what we started over what we read.
+  public static func preferredPort(spawned: Int?, filed: Int?) -> Int? {
+    spawned ?? filed
+  }
+
   public static func baseURL() -> URL? {
     guard let p = port() else { return nil }
     return URL(string: "http://127.0.0.1:\(p)")

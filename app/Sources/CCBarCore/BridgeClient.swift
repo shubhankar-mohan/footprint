@@ -1,32 +1,72 @@
 import Foundation
 
+/// What arrives on the event stream. A heartbeat carries no data but is the only
+/// proof, between snapshots, that the bridge is still on the other end — the
+/// client used to discard it, so "connected" meant no more than "a snapshot
+/// turned up at some point", and the indicator could not go back.
+public enum BridgeEvent: Equatable, Sendable {
+  case snapshot(Data)
+  case heartbeat
+  case disconnected
+}
+
 // Streams snapshots from the bridge: SSE when reachable, else a short poll on drop.
 // Yields raw Data so a decode failure never kills the stream (the store decodes).
 public struct BridgeClient {
-  public init() {}
+  /// The port of the bridge this app spawned, when one is running. The
+  /// supervisor knows it first-hand; without it the client can only read the
+  /// port file, which another bridge may have written — including an orphan
+  /// left by a previous launch, which is how the menu bar ended up streaming
+  /// from a bridge no hook was posting to.
+  private let spawnedPort: () -> Int?
 
-  public func stream() -> AsyncStream<Data> {
+  public init(spawnedPort: @escaping () -> Int? = { nil }) {
+    self.spawnedPort = spawnedPort
+  }
+
+  /// Every request resolves through here, so one half of the app can never end
+  /// up talking to a different bridge than the other half.
+  func base() -> URL? {
+    guard let p = BridgePaths.preferredPort(spawned: spawnedPort(), filed: BridgePaths.port())
+    else { return nil }
+    return BridgePaths.baseURL(port: p)
+  }
+
+  /// One line of the SSE wire format. `data:` carries a snapshot; the bridge's
+  /// `: ping` comment carries nothing but tells us it is still there. Anything
+  /// else — blank separators, fields we do not use — is not an event.
+  public static func classify(_ line: String) -> BridgeEvent? {
+    if line.hasPrefix("data: ") { return .snapshot(Data(line.dropFirst(6).utf8)) }
+    if line.hasPrefix(":") { return .heartbeat }
+    return nil
+  }
+
+  public func stream() -> AsyncStream<BridgeEvent> {
     AsyncStream { continuation in
       let task = Task {
         while !Task.isCancelled {
-          guard let base = BridgePaths.baseURL() else {
+          guard let root = base() else {
+            continuation.yield(.disconnected)
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             continue
           }
           do {
-            var req = URLRequest(url: base.appendingPathComponent("events"))
+            var req = URLRequest(url: root.appendingPathComponent("events"))
             req.timeoutInterval = .infinity
             req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
             let (bytes, _) = try await URLSession.shared.bytes(for: req)
-            for try await line in bytes.lines where line.hasPrefix("data: ") {
-              continuation.yield(Data(line.dropFirst(6).utf8))
+            for try await line in bytes.lines {
+              if let event = Self.classify(line) { continuation.yield(event) }
             }
+            // A stream that ends without throwing is still a stream that ended.
+            continuation.yield(.disconnected)
           } catch {
+            continuation.yield(.disconnected)
             // SSE dropped → poll once so the UI isn't stale, then retry shortly.
-            if let base = BridgePaths.baseURL(),
+            if let root = base(),
               let (data, _) = try? await URLSession.shared.data(
-                from: base.appendingPathComponent("state")) {
-              continuation.yield(data)
+                from: root.appendingPathComponent("state")) {
+              continuation.yield(.snapshot(data))
             }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
           }
@@ -41,8 +81,8 @@ public struct BridgeClient {
   /// and forking all need it; without this the UI offered them anyway and failed
   /// at the moment the user clicked.
   public func tmuxAvailable() async -> Bool {
-    guard let base = BridgePaths.baseURL() else { return false }
-    var req = URLRequest(url: base.appendingPathComponent("health"))
+    guard let root = base() else { return false }
+    var req = URLRequest(url: root.appendingPathComponent("health"))
     req.timeoutInterval = 2
     guard let (data, _) = try? await URLSession.shared.data(for: req),
           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -53,8 +93,8 @@ public struct BridgeClient {
   }
 
   public func decide(id: String, decision: String, updatedInput: [String: JSONValue]? = nil) async {
-    guard let base = BridgePaths.baseURL() else { return }
-    var req = URLRequest(url: base.appendingPathComponent("decision"))
+    guard let root = base() else { return }
+    var req = URLRequest(url: root.appendingPathComponent("decision"))
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     var body: [String: Any] = ["id": id, "decision": decision]
@@ -68,8 +108,8 @@ public struct BridgeClient {
 
   // Phase 3: own a session (tmux), send input, reveal its terminal.
   public func launch(cwd: String, flags: [String: Any], terminal: String) async -> String? {
-    guard let base = BridgePaths.baseURL() else { return nil }
-    var req = URLRequest(url: base.appendingPathComponent("tmux/launch"))
+    guard let root = base() else { return nil }
+    var req = URLRequest(url: root.appendingPathComponent("tmux/launch"))
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     req.httpBody = try? JSONSerialization.data(
@@ -110,8 +150,8 @@ public struct BridgeClient {
   }
 
   private func post(_ path: String, _ body: [String: Any]) async {
-    guard let base = BridgePaths.baseURL() else { return }
-    var req = URLRequest(url: base.appendingPathComponent(path))
+    guard let root = base() else { return }
+    var req = URLRequest(url: root.appendingPathComponent(path))
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     req.httpBody = try? JSONSerialization.data(withJSONObject: body)

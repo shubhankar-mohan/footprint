@@ -39,6 +39,7 @@ import * as pending from "./lib/pending.js";
 import * as sessionMap from "./lib/session-map.js";
 import * as usage from "./lib/usage.js";
 import * as usagePoll from "./lib/usage-poll.js";
+import * as parentWatch from "./lib/parent-watch.js";
 import * as autoresume from "./lib/autoresume.js";
 import * as transcript from "./lib/transcript.js";
 import { decisionOutput } from "./lib/hookdecision.js";
@@ -702,3 +703,16 @@ function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+
+// If the app that spawned us goes away without terminating us — a crash, a
+// force-quit, an in-place upgrade — shut down rather than linger. An orphan
+// keeps its old port bound, keeps polling the rate-limited usage endpoint, and
+// keeps serving a snapshot no hook is updating; a menu bar that reconnects to
+// one shows a stale, partial view of the world with no sign anything is wrong.
+parentWatch.watchParent({
+  parentPid: process.env.CCBAR_PARENT_PID,
+  onGone: () => {
+    log("the app that started this bridge is gone — shutting down");
+    shutdown();
+  },
+});

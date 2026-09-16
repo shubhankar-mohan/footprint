@@ -31,7 +31,7 @@ final class AppModel: ObservableObject {
   @Published var mcpInstalling = false
 
   private let supervisor = BridgeSupervisor()
-  private let client = BridgeClient()
+  private lazy var client = BridgeClient(spawnedPort: { [supervisor] in supervisor.livePort })
   private let differ = SessionStore()
   private var streamTask: Task<Void, Never>?
   private var checkedTmux = false
@@ -56,7 +56,13 @@ final class AppModel: ObservableObject {
     hooksInstalled = HookInstaller.isInstalled()
     streamTask = Task { @MainActor [weak self] in
       guard let self else { return }
-      for await raw in self.client.stream() {
+      for await event in self.client.stream() {
+        // A heartbeat says the bridge is still there without changing anything,
+        // and a drop says it is not. Only a snapshot moves the model.
+        guard case .snapshot(let raw) = event else {
+          self.connected = (event == .heartbeat)
+          continue
+        }
         let newly = self.differ.apply(raw)
         self.snapshot = self.differ.snapshot
         self.connected = true

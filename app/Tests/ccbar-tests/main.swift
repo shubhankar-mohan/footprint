@@ -137,5 +137,41 @@ let noStamp = try! JSONDecoder().decode(
 )
 check(noStamp.usage?.isStale == false, "a reading with no timestamp is not called stale")
 
+// 13. Which bridge to talk to.
+//
+// Found live: two bridges were running — an orphan from a previous app launch on
+// 57694, and the one this app spawned on 58215. The port file named 58215 and
+// the hooks posted there, but the app had read the file during the gap before
+// its own bridge finished booting, connected to the orphan, and never looked
+// again because that stream never dropped. The menu bar showed one working
+// session out of four and a usage reading a day old, while the real bridge two
+// ports away had all of it. The supervisor already knows its own port
+// first-hand; the data path just wasn't asking.
+check(
+  BridgePaths.preferredPort(spawned: 58215, filed: 57694) == 58215,
+  "the bridge this app spawned wins over whatever the port file says"
+)
+check(
+  BridgePaths.preferredPort(spawned: nil, filed: 57694) == 57694,
+  "with nothing spawned, the port file is still the best answer available"
+)
+check(
+  BridgePaths.preferredPort(spawned: nil, filed: nil) == nil,
+  "no port anywhere is nil, not a guess"
+)
+
+// 14. Reading the event stream.
+//
+// The bridge sends a `: ping` comment every 15s to keep the connection warm. The
+// client discarded everything that was not a `data:` line, so the only evidence
+// the app had of being connected was having once received a snapshot — and
+// `connected` was set true and never set back. The dot stayed green for a day
+// while the app streamed from an orphaned bridge.
+check(BridgeClient.classify("data: {\"sessions\":[]}") == .snapshot(Data("{\"sessions\":[]}".utf8)),
+      "a data line is a snapshot")
+check(BridgeClient.classify(": ping") == .heartbeat, "a ping is proof the bridge is still there")
+check(BridgeClient.classify("") == nil, "a blank separator line is not an event")
+check(BridgeClient.classify("event: something") == nil, "an unknown field is ignored, not guessed at")
+
 print(failures == 0 ? "\nALL CHECKS PASSED ✓" : "\n\(failures) FAILURES ✗")
 exit(failures == 0 ? 0 : 1)
