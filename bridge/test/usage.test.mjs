@@ -51,3 +51,51 @@ test("a strictly newer window resets the peak (a real reset drops the %)", () =>
   usage.set({ fiveHour: { used_percentage: 3, resets_at: future + 18000 } }); // new window
   assert.equal(usage.get().fiveHour.used_percentage, 3);
 });
+
+// ── two sources, two different measurements ──────────────────────────────
+// The API's seven_day and the statusline's seven_day are NOT the same window.
+// Observed live: the API reported 41% resetting Sep 17, while the statusline
+// reported 4% resetting Sep 19 — a different weekly bucket entirely. Because
+// resets_at was being used as a version number, the statusline's later reset
+// read as "a newer window began" and wiped the real 41% down to 4%. The meter
+// then swung 36 points every time the live reading aged out. The API is
+// authoritative (it is what `claude /usage` shows); the statusline is only a
+// cold-start fallback for before the first successful poll.
+
+test("a statusline reading never displaces a live API reading", () => {
+  usage.setLive({ sevenDay: { used_percentage: 41, resets_at: future } });
+  usage.set({ sevenDay: { used_percentage: 4, resets_at: future + 172800 } });
+  // Ageing past the old TTL is the whole point: the swing only appeared once
+  // the live reading was considered expired and the fallback took the display.
+  usage._ageLive(10 * 60 * 1000);
+  assert.equal(usage.get().sevenDay.used_percentage, 41);
+  assert.equal(usage.get().source, "api");
+});
+
+test("the statusline is used until the API has answered once", () => {
+  usage.set({ fiveHour: { used_percentage: 15, resets_at: future } });
+  assert.equal(usage.get().fiveHour.used_percentage, 15);
+  assert.equal(usage.get().source, "statusline");
+});
+
+test("a live reading is kept well past the old three-minute TTL", () => {
+  usage.setLive({ fiveHour: { used_percentage: 17, resets_at: future } });
+  // The endpoint is rate limited to roughly one call a minute per account and
+  // is shared with Claude Code itself, so successful polls can be many minutes
+  // apart. A reading older than three minutes is still the truth.
+  usage._ageLive(30 * 60 * 1000);
+  assert.equal(usage.get().fiveHour.used_percentage, 17);
+  assert.equal(usage.get().source, "api");
+});
+
+test("once the API window has actually reset, the statusline takes over", () => {
+  usage.setLive({ fiveHour: { used_percentage: 90, resets_at: past } });
+  usage.set({ fiveHour: { used_percentage: 6, resets_at: future } });
+  assert.equal(usage.get().fiveHour.used_percentage, 6);
+});
+
+test("get reports how old the reading is, so the UI can say so", () => {
+  usage.setLive({ fiveHour: { used_percentage: 17, resets_at: future } });
+  usage._ageLive(11 * 60 * 1000);
+  assert.ok(usage.get().updatedAt <= Date.now() - 11 * 60 * 1000);
+});

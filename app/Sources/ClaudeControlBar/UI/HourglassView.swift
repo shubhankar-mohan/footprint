@@ -6,11 +6,26 @@ import CCBarCore
 struct HourglassView: View {
   let usage: Usage
   var body: some View {
-    VStack(spacing: 5) {
+    VStack(alignment: .leading, spacing: 5) {
       if let f = usage.fiveHour { bar("5-hour", f) }
       if let w = usage.sevenDay { bar("Weekly", w) }
+      staleNote
     }
     .padding(.horizontal, 12).padding(.vertical, 6)
+  }
+
+  // The account usage endpoint is rate limited and shared with Claude Code
+  // itself, so the bridge backs off rather than hammering it. That is fine and
+  // invisible — but if it has been quiet for longer than any normal backoff,
+  // these bars have frozen, and a frozen percentage that looks live is worse
+  // than one that admits its age.
+  @ViewBuilder private var staleNote: some View {
+    if let age = usage.ageDescription {
+      Text("Last checked \(age) ago")
+        .font(.system(size: 11)).foregroundStyle(.tertiary)
+        .padding(.leading, 17)
+        .accessibilityLabel("These usage figures are \(age) old")
+    }
   }
 
   @ViewBuilder private func bar(_ label: String, _ w: UsageWindow) -> some View {

@@ -110,5 +110,32 @@ check(
   "an installed remembered choice is kept"
 )
 
+// 12. Usage freshness. The poller backs off when the endpoint rate limits us,
+// so the reading on screen can legitimately be several minutes old. What it must
+// never do is present a frozen number as a live one.
+let nowMs = Date().timeIntervalSince1970 * 1000
+func usageSnapshot(agedMinutes: Double) -> Usage? {
+  let at = nowMs - agedMinutes * 60 * 1000
+  let j = #"{"sessions":[],"pending":[],"aggregate":"idle","usage":{"fiveHour":{"used_percentage":17,"resets_at":1789596000},"updatedAt":\#(at)}}"#
+  return try? JSONDecoder().decode(Snapshot.self, from: Data(j.utf8)).usage
+}
+
+check(usageSnapshot(agedMinutes: 2)?.updatedAt != nil, "decodes usage.updatedAt")
+check(usageSnapshot(agedMinutes: 2)?.isStale == false, "a two-minute-old reading is current")
+check(
+  usageSnapshot(agedMinutes: 40)?.isStale == true,
+  "a forty-minute-old reading is stale — past any normal backoff"
+)
+check(usageSnapshot(agedMinutes: 40)?.ageDescription == "40m", "describes its age in minutes")
+check(usageSnapshot(agedMinutes: 150)?.ageDescription == "2h", "describes a long age in hours")
+
+// No updatedAt at all means an older bridge, not a stale reading. Crying wolf
+// on every upgrade would teach the user to ignore the warning.
+let noStamp = try! JSONDecoder().decode(
+  Snapshot.self,
+  from: Data(#"{"sessions":[],"pending":[],"aggregate":"idle","usage":{"fiveHour":{"used_percentage":17}}}"#.utf8)
+)
+check(noStamp.usage?.isStale == false, "a reading with no timestamp is not called stale")
+
 print(failures == 0 ? "\nALL CHECKS PASSED ✓" : "\n\(failures) FAILURES ✗")
 exit(failures == 0 ? 0 : 1)

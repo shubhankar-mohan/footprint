@@ -15,6 +15,9 @@ const pexec = promisify(execFile);
 const KEYCHAIN_SERVICE = "Claude Code-credentials";
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 
+export const BASE_INTERVAL_MS = 60_000;
+export const MAX_BACKOFF_MS = 15 * 60_000;
+
 let cachedToken = null;
 
 async function readTokenFromKeychain() {
@@ -71,7 +74,9 @@ export async function pollOnce() {
       if (!token) return { ok: false, reason: "no-token" };
       res = await fetchUsage(token);
     }
-    if (!res.ok) return { ok: false, reason: `http-${res.status}` };
+    if (!res.ok) {
+      return { ok: false, reason: `http-${res.status}`, retryAfterMs: retryAfterMs(res) };
+    }
     const d = await res.json();
     usage.setLive({ fiveHour: mapWindow(d.five_hour), sevenDay: mapWindow(d.seven_day) });
     return { ok: true, fiveHour: d.five_hour?.utilization, sevenDay: d.seven_day?.utilization };
@@ -80,14 +85,75 @@ export async function pollOnce() {
   }
 }
 
-// Start polling on an interval. Returns the timer (unref'd). onResult(res) for logs.
-export function start({ intervalMs = 60000, onResult } = {}) {
+// `retry-after` in milliseconds, or null when the server did not give a usable
+// one. The header is seconds, and this endpoint has been seen answering 429 with
+// `retry-after: 0` — which would mean "retry immediately", the one thing that
+// cannot possibly work. Only a positive value counts.
+function retryAfterMs(res) {
+  const raw = Number(res.headers?.get?.("retry-after"));
+  return Number.isFinite(raw) && raw > 0 ? raw * 1000 : null;
+}
+
+// How long to wait before the next poll.
+//
+// The usage endpoint is rate limited per account and the budget is SHARED with
+// Claude Code itself, which calls it for its own status line. Measured over 3542
+// polls at a flat 60s cadence: 82% came back 429, in a steady rhythm of seven
+// failures to one success. Retrying straight through a 429 just loses the same
+// race sixty seconds later, so a failure has to give ground — and a success has
+// to take it straight back, because the five-hour window is worth watching
+// closely when it is nearly full.
+export function nextDelay(prev, result, { base = BASE_INTERVAL_MS, max = MAX_BACKOFF_MS } = {}) {
+  if (result?.ok) return base;
+  const after = Number(result?.retryAfterMs);
+  if (Number.isFinite(after) && after > 0) return Math.min(Math.max(after, base), max);
+  const grown = Number.isFinite(prev) && prev > 0 ? prev * 2 : base * 2;
+  return Math.min(Math.max(grown, base * 2), max);
+}
+
+// Start polling. Returns { stop() }. onResult(res) for logs; `poll` is injectable
+// so the scheduling can be tested without going near the network.
+//
+// Each tick books the next one, which is what makes the interval adaptive — and
+// also what makes it fragile: under the old setInterval a throw cost one tick,
+// here it would end polling for the life of the bridge and freeze the meter with
+// nothing to show for it. So nothing inside a tick is allowed to escape: the
+// poll and the callback are each contained, and the booking happens after both.
+export function start({ intervalMs = BASE_INTERVAL_MS, onResult, poll = pollOnce } = {}) {
+  let delay = intervalMs;
+  let timer = null;
+  let stopped = false;
+
   const tick = async () => {
-    const r = await pollOnce();
-    if (onResult) onResult(r);
+    let r;
+    try {
+      r = await poll();
+    } catch (e) {
+      r = { ok: false, reason: String(e?.message || e) };
+    }
+    try {
+      if (onResult) onResult(r);
+    } catch (e) {
+      // The callback IS the logger, so there is nowhere good to report this.
+      // Containing it is what matters: thrown from a timer callback it escaped
+      // as an unhandled rejection, which ends the whole bridge process.
+      console.error("usage poll: result handler threw:", e?.message || e);
+    }
+    if (stopped) return;
+    delay = nextDelay(delay, r, { base: intervalMs });
+    timer = setTimeout(tick, delay);
+    if (typeof timer.unref === "function") timer.unref();
   };
-  tick(); // immediate first poll
-  const timer = setInterval(tick, intervalMs);
-  if (typeof timer.unref === "function") timer.unref();
-  return timer;
+
+  void tick(); // immediate first poll; every tick books the next
+  return {
+    stop() {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+    // Exposed for logging/tests: what the poller is currently waiting.
+    get delayMs() {
+      return delay;
+    },
+  };
 }

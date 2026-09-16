@@ -616,17 +616,20 @@ server.listen(PORT, HOST, () => {
     }
   })();
 
-  // Real-time usage: poll the account usage API (authoritative) every 60s.
+  // Real-time usage: poll the account usage API (authoritative) every 60s, and
+  // back off when it rate limits us rather than losing the same race a minute
+  // later. A failed poll no longer changes what the meter shows — the last
+  // reading stands until the window it describes actually resets.
   if (!process.env.CCBAR_NO_USAGE_POLL) {
     usagePoll.start({
-      intervalMs: 60_000,
+      intervalMs: usagePoll.BASE_INTERVAL_MS,
       onResult: (r) => {
         appendEventLog({ dir: "usage-poll", result: r });
         if (r.ok) {
           log(`usage poll: 5h ${Math.round(r.fiveHour)}% · weekly ${Math.round(r.sevenDay)}%`);
           broadcast();
         } else {
-          log(`usage poll: ${r.reason} (falling back to statusline)`);
+          log(`usage poll: ${r.reason} (keeping the last reading)`);
         }
       },
     });

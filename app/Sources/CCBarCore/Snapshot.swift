@@ -69,9 +69,35 @@ public struct UsageWindow: Codable, Equatable, Sendable {
 public struct Usage: Codable, Equatable, Sendable {
   public var fiveHour: UsageWindow?
   public var sevenDay: UsageWindow?
+  /// When the bridge took this reading (epoch millis), if it said.
+  public var updatedAt: Double?
+
   /// The higher of the two windows, for glyph/visibility decisions.
   public var peakPercentage: Double {
     max(fiveHour?.usedPercentage ?? 0, sevenDay?.usedPercentage ?? 0)
+  }
+
+  /// How long ago the reading was taken, or nil if the bridge did not say.
+  public var age: TimeInterval? {
+    guard let updatedAt else { return nil }
+    return max(0, Date().timeIntervalSince1970 - updatedAt / 1000)
+  }
+
+  /// The usage endpoint is rate limited per account and shared with Claude Code
+  /// itself, so the bridge backs off to at most fifteen minutes between polls.
+  /// Anything older than that is not backoff — it is a poller that has stopped
+  /// answering, and the number on screen has frozen. Say so rather than let a
+  /// stale percentage pass for a live one.
+  public var isStale: Bool { (age ?? 0) > staleAfter }
+
+  /// A reading with no timestamp comes from an older bridge, not a stalled one.
+  private var staleAfter: TimeInterval { 20 * 60 }
+
+  /// "8m", "2h" — nil when the reading is current.
+  public var ageDescription: String? {
+    guard let age, isStale else { return nil }
+    if age < 3600 { return "\(Int(age / 60))m" }
+    return "\(Int(age / 3600))h"
   }
 }
 

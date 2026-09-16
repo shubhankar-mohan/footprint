@@ -34,6 +34,9 @@ struct MenuBarLabel: View {
     var s = "\(Theme.label(agg))"
     if let u = model.snapshot.usage {
       s += ", \(Int(u.peakPercentage.rounded())) percent of your usage limit"
+      // The glyph has no room to show this, but a figure that stopped updating
+      // half an hour ago should not be read out as if it were current.
+      if let age = u.ageDescription { s += ", last checked \(age) ago" }
     }
     return s
   }
