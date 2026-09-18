@@ -8,7 +8,7 @@
 <p align="center">
   <img alt="platform: macOS" src="https://img.shields.io/badge/platform-macOS-black">
   <img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="version: v0.2.3" src="https://img.shields.io/badge/version-v0.2.3-4a90e2">
+  <img alt="version: v0.2.4" src="https://img.shields.io/badge/version-v0.2.4-4a90e2">
   <img alt="price: free & open-source" src="https://img.shields.io/badge/free%20%26%20open--source-yes-4a90e2">
 </p>
 
@@ -126,7 +126,7 @@ color-blind safety.
 | **8** | Forks, notes, the forest view, project scoping | ✅ shipped |
 | **9** | Sparkle auto-update, a notarised `.dmg` | ⏳ open |
 
-Built and tested: **308 bridge tests** plus an in-app Swift check suite.
+Built and tested: **323 bridge tests** plus an in-app Swift check suite.
 
 The current Phase 1 design lives in
 [`docs/superpowers/specs/2026-07-11-phase1-monitor-approve-design.md`](docs/superpowers/specs/2026-07-11-phase1-monitor-approve-design.md).
